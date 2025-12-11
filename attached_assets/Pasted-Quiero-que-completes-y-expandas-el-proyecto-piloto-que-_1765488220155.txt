@@ -1,0 +1,229 @@
+Quiero que completes y expandas el proyecto piloto que ya creaste.
+Ahora debes construir TODA la estructura para una aplicación de turismo tipo Airbnb, con una sola app que soporte tres roles:
+
+1. Usuario (turista)
+
+
+2. Guía (prestador de servicios turísticos)
+
+
+3. CEO / Admin (control total del sistema)
+
+
+
+📌 Instrucciones generales
+
+Mantén la misma estética, estilo y estructura del piloto que generaste.
+
+Usa React + Node + Supabase (o la base que ya configuraste).
+
+Todo debe funcionar conectado: autenticación, base de datos y navegación.
+
+Implementa protección por roles.
+
+Crea rutas separadas según el tipo de usuario.
+
+
+
+---
+
+🔧 1. Sistema de Roles y Autenticación
+
+Agrega:
+
+Registro de Usuario
+
+Registro de Guía (más campos)
+
+Login único para todos
+
+Middleware de roles
+
+Redirecciones automáticas según rol
+
+
+
+---
+
+🧭 2. Panel del Usuario (Turista)
+
+Debe incluir:
+
+Explorar tours publicados
+
+Ver detalles del tour
+
+Reservar un tour
+
+Ver mis reservas
+
+Perfil del usuario
+
+
+
+---
+
+🧳 3. Panel del Guía
+
+El guía debe poder:
+
+Completar su perfil profesional
+
+Subir documentos (PDF, fotos, certificados)
+
+Crear sus tours:
+
+título
+
+descripción
+
+precio
+
+ubicación
+
+fechas disponibles
+
+fotos
+
+
+Ver reservas recibidas
+
+Marcar un tour como disponible / no disponible
+
+
+
+---
+
+📊 4. Panel del CEO / Admin
+
+El CEO debe tener acceso a:
+
+Lista de todos los guías
+
+Aprobación de nuevos guías
+
+Lista de usuarios
+
+Lista de tours
+
+Lista de reservas
+
+Dashboard con estadísticas:
+
+total de ventas
+
+comisiones generadas
+
+guías activos
+
+tours publicados
+
+
+
+
+---
+
+💰 5. Sistema de Comisiones
+
+Implementar:
+
+Comisión porcentual global (ej: 10%)
+
+Cada reserva debe calcular:
+
+precio total
+
+comisión del CEO
+
+pago del guía
+
+
+
+
+---
+
+🗃 6. Base de Datos (Supabase / Replit DB / PostgreSQL)
+
+Crear tablas completas:
+
+users (con campo “role”: user/guide/admin)
+
+guides_profiles
+
+tours
+
+tour_images
+
+reservations
+
+payments & commissions
+
+
+
+---
+
+🎨 7. UI / UX
+
+Mantén el diseño que ya generaste
+
+Crea los paneles con navegación lateral
+
+Agrega breadcrumbs
+
+Integra componentes reutilizables
+
+
+
+---
+
+⚙️ 8. Funcionalidades extra
+
+Validación de formularios
+
+Protección de rutas
+
+Carga de imágenes
+
+Búsqueda de tours por ubicación
+
+Filtrar por precio / categoría
+
+
+
+---
+
+🧩 9. Entregables
+
+Quiero que generes:
+
+Todas las pantallas completas
+
+Todo el código necesario
+
+Todas las rutas protegidas
+
+Modelos de datos
+
+Capa de servicios (API)
+
+Integración total con la base
+
+Un sistema funcional para probar
+
+
+
+---
+
+✔️ 10. Cuando termines:
+
+Muéstrame:
+
+Estructura final del proyecto
+
+Archivos creados/modificados
+
+Cómo crear cada rol
+
+Cómo probar la app
+
+Cómo ingresar como CEO

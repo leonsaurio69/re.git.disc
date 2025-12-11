@@ -2,8 +2,10 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { 
-  registerSchema, loginSchema, insertTourSchema, insertBookingSchema,
-  UserRole, BookingStatus 
+  registerSchema, guideRegisterSchema, loginSchema, insertTourSchema, insertBookingSchema,
+  insertGuideProfileSchema, insertDocumentSchema, insertTourImageSchema, insertTourAvailabilitySchema,
+  insertReviewSchema,
+  UserRole, BookingStatus, GuideStatus
 } from "@shared/schema";
 import { 
   hashPassword, comparePassword, generateToken, sanitizeUser,
@@ -15,25 +17,29 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
   
   // ==================== AUTH ROUTES ====================
   
-  // Register
+  // Register user
   app.post("/api/auth/register", async (req, res) => {
     try {
       const data = registerSchema.parse(req.body);
       
-      // Check if email already exists
       const existingUser = await storage.getUserByEmail(data.email);
       if (existingUser) {
         return res.status(400).json({ message: "El correo electrónico ya está registrado" });
       }
 
-      // Hash password and create user
       const hashedPassword = await hashPassword(data.password);
       const user = await storage.createUser({
         name: data.name,
         email: data.email,
         password: hashedPassword,
+        phone: data.phone,
         role: data.role,
       });
+
+      // If registering as guide, create profile
+      if (data.role === UserRole.GUIDE) {
+        await storage.createGuideProfile({ userId: user.id });
+      }
 
       const safeUser = sanitizeUser(user);
       const token = generateToken(safeUser);
@@ -48,6 +54,53 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
     }
   });
 
+  // Register guide (extended registration)
+  app.post("/api/auth/register/guide", async (req, res) => {
+    try {
+      const data = guideRegisterSchema.parse(req.body);
+      
+      const existingUser = await storage.getUserByEmail(data.email);
+      if (existingUser) {
+        return res.status(400).json({ message: "El correo electrónico ya está registrado" });
+      }
+
+      const hashedPassword = await hashPassword(data.password);
+      const user = await storage.createUser({
+        name: data.name,
+        email: data.email,
+        password: hashedPassword,
+        phone: data.phone,
+        location: data.location,
+        role: UserRole.GUIDE,
+      });
+
+      // Create guide profile
+      await storage.createGuideProfile({
+        userId: user.id,
+        businessName: data.businessName,
+        specialties: data.specialties,
+        languages: data.languages,
+        experience: data.experience,
+        status: GuideStatus.PENDING,
+      });
+
+      const safeUser = sanitizeUser(user);
+      const token = generateToken(safeUser);
+
+      res.status(201).json({ 
+        user: safeUser, 
+        token,
+        message: "Registro exitoso. Tu cuenta está pendiente de aprobación." 
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: error.errors[0].message });
+      }
+      console.error("Register guide error:", error);
+      res.status(500).json({ message: "Error al registrar guía" });
+    }
+  });
+
   // Login
   app.post("/api/auth/login", async (req, res) => {
     try {
@@ -58,6 +111,10 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
         return res.status(401).json({ message: "Credenciales inválidas" });
       }
 
+      if (!user.active) {
+        return res.status(403).json({ message: "Tu cuenta está desactivada" });
+      }
+
       const isValidPassword = await comparePassword(data.password, user.password);
       if (!isValidPassword) {
         return res.status(401).json({ message: "Credenciales inválidas" });
@@ -66,7 +123,13 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
       const safeUser = sanitizeUser(user);
       const token = generateToken(safeUser);
 
-      res.json({ user: safeUser, token });
+      // Get guide profile if user is a guide
+      let guideProfile = null;
+      if (user.role === UserRole.GUIDE) {
+        guideProfile = await storage.getGuideProfile(user.id);
+      }
+
+      res.json({ user: safeUser, token, guideProfile });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: error.errors[0].message });
@@ -83,27 +146,132 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
       if (!user) {
         return res.status(404).json({ message: "Usuario no encontrado" });
       }
-      res.json(sanitizeUser(user));
+
+      let guideProfile = null;
+      if (user.role === UserRole.GUIDE) {
+        guideProfile = await storage.getGuideProfile(user.id);
+      }
+
+      res.json({ ...sanitizeUser(user), guideProfile });
     } catch (error) {
       console.error("Get user error:", error);
       res.status(500).json({ message: "Error al obtener usuario" });
     }
   });
 
+  // ==================== GUIDE PROFILE ROUTES ====================
+
+  // Get my guide profile
+  app.get("/api/guide/profile", authenticate, requireRole(UserRole.GUIDE), async (req: AuthRequest, res) => {
+    try {
+      const profile = await storage.getGuideProfile(req.user!.userId);
+      if (!profile) {
+        return res.status(404).json({ message: "Perfil no encontrado" });
+      }
+      res.json(profile);
+    } catch (error) {
+      console.error("Get guide profile error:", error);
+      res.status(500).json({ message: "Error al obtener perfil" });
+    }
+  });
+
+  // Update my guide profile
+  app.put("/api/guide/profile", authenticate, requireRole(UserRole.GUIDE), async (req: AuthRequest, res) => {
+    try {
+      const profile = await storage.updateGuideProfile(req.user!.userId, req.body);
+      if (!profile) {
+        return res.status(404).json({ message: "Perfil no encontrado" });
+      }
+      res.json(profile);
+    } catch (error) {
+      console.error("Update guide profile error:", error);
+      res.status(500).json({ message: "Error al actualizar perfil" });
+    }
+  });
+
+  // ==================== DOCUMENT ROUTES ====================
+
+  // Upload document
+  app.post("/api/guide/documents", authenticate, requireRole(UserRole.GUIDE), async (req: AuthRequest, res) => {
+    try {
+      const docData = insertDocumentSchema.parse({
+        ...req.body,
+        userId: req.user!.userId,
+      });
+      const doc = await storage.createDocument(docData);
+      res.status(201).json(doc);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: error.errors[0].message });
+      }
+      console.error("Upload document error:", error);
+      res.status(500).json({ message: "Error al subir documento" });
+    }
+  });
+
+  // Get my documents
+  app.get("/api/guide/documents", authenticate, requireRole(UserRole.GUIDE), async (req: AuthRequest, res) => {
+    try {
+      const docs = await storage.getDocumentsByUser(req.user!.userId);
+      res.json(docs);
+    } catch (error) {
+      console.error("Get documents error:", error);
+      res.status(500).json({ message: "Error al obtener documentos" });
+    }
+  });
+
+  // Delete document
+  app.delete("/api/guide/documents/:id", authenticate, requireRole(UserRole.GUIDE), async (req: AuthRequest, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteDocument(id);
+      res.json({ message: "Documento eliminado" });
+    } catch (error) {
+      console.error("Delete document error:", error);
+      res.status(500).json({ message: "Error al eliminar documento" });
+    }
+  });
+
   // ==================== TOUR ROUTES ====================
+
+  // Search tours (public)
+  app.get("/api/tours/search", async (req, res) => {
+    try {
+      const { q, category, minPrice, maxPrice, location } = req.query;
+      const tours = await storage.searchTours(q as string || "", {
+        category: category as string,
+        minPrice: minPrice ? parseFloat(minPrice as string) : undefined,
+        maxPrice: maxPrice ? parseFloat(maxPrice as string) : undefined,
+        location: location as string,
+      });
+      
+      const toursWithGuides = await Promise.all(
+        tours.map(async (tour) => {
+          const guide = await storage.getUserById(tour.guideId);
+          return { ...tour, guide: guide ? sanitizeUser(guide) : null };
+        })
+      );
+
+      res.json(toursWithGuides);
+    } catch (error) {
+      console.error("Search tours error:", error);
+      res.status(500).json({ message: "Error al buscar tours" });
+    }
+  });
 
   // Get all tours (public)
   app.get("/api/tours", async (req, res) => {
     try {
-      const allTours = await storage.getAllTours();
+      const allTours = await storage.getActiveTours();
       
-      // Get guide info for each tour
       const toursWithGuides = await Promise.all(
         allTours.map(async (tour) => {
           const guide = await storage.getUserById(tour.guideId);
+          const images = await storage.getTourImages(tour.id);
           return {
             ...tour,
             guide: guide ? sanitizeUser(guide) : null,
+            images,
           };
         })
       );
@@ -124,10 +292,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
       const toursWithGuides = await Promise.all(
         featuredTours.map(async (tour) => {
           const guide = await storage.getUserById(tour.guideId);
-          return {
-            ...tour,
-            guide: guide ? sanitizeUser(guide) : null,
-          };
+          return { ...tour, guide: guide ? sanitizeUser(guide) : null };
         })
       );
 
@@ -149,9 +314,25 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
       }
 
       const guide = await storage.getUserById(tour.guideId);
+      const guideProfile = guide ? await storage.getGuideProfile(guide.id) : null;
+      const images = await storage.getTourImages(id);
+      const availability = await storage.getTourAvailability(id);
+      const reviews = await storage.getReviewsByTour(id);
+
+      // Get user info for reviews
+      const reviewsWithUsers = await Promise.all(
+        reviews.map(async (review) => {
+          const user = await storage.getUserById(review.userId);
+          return { ...review, user: user ? sanitizeUser(user) : null };
+        })
+      );
+
       res.json({
         ...tour,
-        guide: guide ? sanitizeUser(guide) : null,
+        guide: guide ? { ...sanitizeUser(guide), guideProfile } : null,
+        images,
+        availability,
+        reviews: reviewsWithUsers,
       });
     } catch (error) {
       console.error("Get tour error:", error);
@@ -162,6 +343,14 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
   // Create tour (guides only)
   app.post("/api/tours", authenticate, requireRole(UserRole.GUIDE, UserRole.ADMIN), async (req: AuthRequest, res) => {
     try {
+      // Check if guide is approved
+      if (req.user!.role === UserRole.GUIDE) {
+        const profile = await storage.getGuideProfile(req.user!.userId);
+        if (!profile || profile.status !== GuideStatus.APPROVED) {
+          return res.status(403).json({ message: "Tu cuenta debe estar aprobada para crear tours" });
+        }
+      }
+
       const tourData = insertTourSchema.parse({
         ...req.body,
         guideId: req.user!.userId,
@@ -188,7 +377,6 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
         return res.status(404).json({ message: "Tour no encontrado" });
       }
 
-      // Check ownership
       if (req.user!.role !== UserRole.ADMIN && existingTour.guideId !== req.user!.userId) {
         return res.status(403).json({ message: "No tienes permiso para editar este tour" });
       }
@@ -211,7 +399,6 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
         return res.status(404).json({ message: "Tour no encontrado" });
       }
 
-      // Check ownership
       if (req.user!.role !== UserRole.ADMIN && existingTour.guideId !== req.user!.userId) {
         return res.status(403).json({ message: "No tienes permiso para eliminar este tour" });
       }
@@ -221,6 +408,28 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
     } catch (error) {
       console.error("Delete tour error:", error);
       res.status(500).json({ message: "Error al eliminar tour" });
+    }
+  });
+
+  // Toggle tour active status
+  app.patch("/api/tours/:id/toggle", authenticate, requireRole(UserRole.GUIDE, UserRole.ADMIN), async (req: AuthRequest, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existingTour = await storage.getTourById(id);
+
+      if (!existingTour) {
+        return res.status(404).json({ message: "Tour no encontrado" });
+      }
+
+      if (req.user!.role !== UserRole.ADMIN && existingTour.guideId !== req.user!.userId) {
+        return res.status(403).json({ message: "No tienes permiso" });
+      }
+
+      const tour = await storage.updateTour(id, { active: !existingTour.active });
+      res.json(tour);
+    } catch (error) {
+      console.error("Toggle tour error:", error);
+      res.status(500).json({ message: "Error al cambiar estado del tour" });
     }
   });
 
@@ -235,32 +444,130 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
     }
   });
 
+  // ==================== TOUR IMAGES ROUTES ====================
+
+  // Add tour image
+  app.post("/api/tours/:id/images", authenticate, requireRole(UserRole.GUIDE, UserRole.ADMIN), async (req: AuthRequest, res) => {
+    try {
+      const tourId = parseInt(req.params.id);
+      const tour = await storage.getTourById(tourId);
+
+      if (!tour) {
+        return res.status(404).json({ message: "Tour no encontrado" });
+      }
+
+      if (req.user!.role !== UserRole.ADMIN && tour.guideId !== req.user!.userId) {
+        return res.status(403).json({ message: "No tienes permiso" });
+      }
+
+      const imageData = insertTourImageSchema.parse({ ...req.body, tourId });
+      const image = await storage.addTourImage(imageData);
+      res.status(201).json(image);
+    } catch (error) {
+      console.error("Add tour image error:", error);
+      res.status(500).json({ message: "Error al agregar imagen" });
+    }
+  });
+
+  // Delete tour image
+  app.delete("/api/tours/:tourId/images/:imageId", authenticate, requireRole(UserRole.GUIDE, UserRole.ADMIN), async (req: AuthRequest, res) => {
+    try {
+      const tourId = parseInt(req.params.tourId);
+      const imageId = parseInt(req.params.imageId);
+      const tour = await storage.getTourById(tourId);
+
+      if (!tour || (req.user!.role !== UserRole.ADMIN && tour.guideId !== req.user!.userId)) {
+        return res.status(403).json({ message: "No tienes permiso" });
+      }
+
+      await storage.deleteTourImage(imageId);
+      res.json({ message: "Imagen eliminada" });
+    } catch (error) {
+      console.error("Delete tour image error:", error);
+      res.status(500).json({ message: "Error al eliminar imagen" });
+    }
+  });
+
+  // ==================== TOUR AVAILABILITY ROUTES ====================
+
+  // Add tour availability
+  app.post("/api/tours/:id/availability", authenticate, requireRole(UserRole.GUIDE, UserRole.ADMIN), async (req: AuthRequest, res) => {
+    try {
+      const tourId = parseInt(req.params.id);
+      const tour = await storage.getTourById(tourId);
+
+      if (!tour || (req.user!.role !== UserRole.ADMIN && tour.guideId !== req.user!.userId)) {
+        return res.status(403).json({ message: "No tienes permiso" });
+      }
+
+      const availabilityData = insertTourAvailabilitySchema.parse({ ...req.body, tourId });
+      const availability = await storage.addTourAvailability(availabilityData);
+      res.status(201).json(availability);
+    } catch (error) {
+      console.error("Add availability error:", error);
+      res.status(500).json({ message: "Error al agregar disponibilidad" });
+    }
+  });
+
+  // Get tour availability
+  app.get("/api/tours/:id/availability", async (req, res) => {
+    try {
+      const tourId = parseInt(req.params.id);
+      const availability = await storage.getTourAvailability(tourId);
+      res.json(availability);
+    } catch (error) {
+      console.error("Get availability error:", error);
+      res.status(500).json({ message: "Error al obtener disponibilidad" });
+    }
+  });
+
+  // Delete availability
+  app.delete("/api/tours/:tourId/availability/:availId", authenticate, requireRole(UserRole.GUIDE, UserRole.ADMIN), async (req: AuthRequest, res) => {
+    try {
+      const availId = parseInt(req.params.availId);
+      await storage.deleteTourAvailability(availId);
+      res.json({ message: "Disponibilidad eliminada" });
+    } catch (error) {
+      console.error("Delete availability error:", error);
+      res.status(500).json({ message: "Error al eliminar disponibilidad" });
+    }
+  });
+
   // ==================== BOOKING ROUTES ====================
 
-  // Create booking (users)
+  // Create booking
   app.post("/api/bookings", authenticate, async (req: AuthRequest, res) => {
     try {
-      const { tourId, date, guests } = req.body;
+      const { tourId, date, guests, availabilityId, notes } = req.body;
       
       const tour = await storage.getTourById(parseInt(tourId));
       if (!tour) {
         return res.status(404).json({ message: "Tour no encontrado" });
       }
 
+      if (!tour.active) {
+        return res.status(400).json({ message: "Este tour no está disponible" });
+      }
+
       if (guests > tour.maxGroupSize) {
         return res.status(400).json({ message: `Máximo ${tour.maxGroupSize} personas por grupo` });
       }
 
-      const totalPrice = tour.price * guests;
-      const serviceFee = totalPrice * 0.1;
+      const subtotal = tour.price * guests;
 
       const bookingData = insertBookingSchema.parse({
         userId: req.user!.userId,
         tourId: parseInt(tourId),
+        availabilityId: availabilityId ? parseInt(availabilityId) : null,
         date: new Date(date),
         guests,
-        totalPrice: totalPrice + serviceFee,
+        subtotal,
+        totalPrice: subtotal,
+        commissionAmount: 0,
+        commissionRate: 10,
+        guideEarnings: 0,
         status: BookingStatus.PENDING,
+        notes,
       });
 
       const booking = await storage.createBooking(bookingData);
@@ -274,18 +581,18 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
     }
   });
 
-  // Get my bookings (users)
+  // Get my bookings
   app.get("/api/bookings", authenticate, async (req: AuthRequest, res) => {
     try {
       const myBookings = await storage.getBookingsByUser(req.user!.userId);
       
-      // Get tour info for each booking
       const bookingsWithTours = await Promise.all(
         myBookings.map(async (booking) => {
           const tour = await storage.getTourById(booking.tourId);
+          const guide = tour ? await storage.getUserById(tour.guideId) : null;
           return {
             ...booking,
-            tour,
+            tour: tour ? { ...tour, guide: guide ? sanitizeUser(guide) : null } : null,
           };
         })
       );
@@ -307,17 +614,22 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
         return res.status(404).json({ message: "Reserva no encontrada" });
       }
 
-      // Check ownership or admin
-      if (req.user!.role !== UserRole.ADMIN && booking.userId !== req.user!.userId) {
-        return res.status(403).json({ message: "No tienes permiso para ver esta reserva" });
+      // Check ownership, guide ownership, or admin
+      const tour = await storage.getTourById(booking.tourId);
+      const isOwner = booking.userId === req.user!.userId;
+      const isGuide = tour && tour.guideId === req.user!.userId;
+      const isAdmin = req.user!.role === UserRole.ADMIN;
+
+      if (!isOwner && !isGuide && !isAdmin) {
+        return res.status(403).json({ message: "No tienes permiso" });
       }
 
-      const tour = await storage.getTourById(booking.tourId);
       const user = await storage.getUserById(booking.userId);
+      const guide = tour ? await storage.getUserById(tour.guideId) : null;
 
       res.json({
         ...booking,
-        tour,
+        tour: tour ? { ...tour, guide: guide ? sanitizeUser(guide) : null } : null,
         user: user ? sanitizeUser(user) : null,
       });
     } catch (error) {
@@ -330,22 +642,22 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
   app.patch("/api/bookings/:id/status", authenticate, requireRole(UserRole.GUIDE, UserRole.ADMIN), async (req: AuthRequest, res) => {
     try {
       const id = parseInt(req.params.id);
-      const { status } = req.body;
+      const { status, reason } = req.body;
 
       const booking = await storage.getBookingById(id);
       if (!booking) {
         return res.status(404).json({ message: "Reserva no encontrada" });
       }
 
-      // Check if guide owns the tour
       if (req.user!.role === UserRole.GUIDE) {
         const tour = await storage.getTourById(booking.tourId);
         if (!tour || tour.guideId !== req.user!.userId) {
-          return res.status(403).json({ message: "No tienes permiso para modificar esta reserva" });
+          return res.status(403).json({ message: "No tienes permiso" });
         }
       }
 
-      const updated = await storage.updateBookingStatus(id, status);
+      const cancelledBy = status === BookingStatus.CANCELLED ? req.user!.userId : undefined;
+      const updated = await storage.updateBookingStatus(id, status, cancelledBy, reason);
       res.json(updated);
     } catch (error) {
       console.error("Update booking status error:", error);
@@ -353,23 +665,23 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
     }
   });
 
-  // Cancel booking (user who made it)
+  // Cancel my booking
   app.delete("/api/bookings/:id", authenticate, async (req: AuthRequest, res) => {
     try {
       const id = parseInt(req.params.id);
+      const { reason } = req.body || {};
       const booking = await storage.getBookingById(id);
 
       if (!booking) {
         return res.status(404).json({ message: "Reserva no encontrada" });
       }
 
-      // Check ownership or admin
       if (req.user!.role !== UserRole.ADMIN && booking.userId !== req.user!.userId) {
-        return res.status(403).json({ message: "No tienes permiso para cancelar esta reserva" });
+        return res.status(403).json({ message: "No tienes permiso" });
       }
 
-      await storage.updateBookingStatus(id, BookingStatus.CANCELLED);
-      res.json({ message: "Reserva cancelada correctamente" });
+      await storage.updateBookingStatus(id, BookingStatus.CANCELLED, req.user!.userId, reason);
+      res.json({ message: "Reserva cancelada" });
     } catch (error) {
       console.error("Cancel booking error:", error);
       res.status(500).json({ message: "Error al cancelar reserva" });
@@ -400,13 +712,109 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
     }
   });
 
+  // ==================== REVIEW ROUTES ====================
+
+  // Create review (after completed booking)
+  app.post("/api/reviews", authenticate, async (req: AuthRequest, res) => {
+    try {
+      const { bookingId, rating, comment } = req.body;
+      
+      const booking = await storage.getBookingById(parseInt(bookingId));
+      if (!booking) {
+        return res.status(404).json({ message: "Reserva no encontrada" });
+      }
+
+      if (booking.userId !== req.user!.userId) {
+        return res.status(403).json({ message: "No tienes permiso" });
+      }
+
+      if (booking.status !== BookingStatus.COMPLETED) {
+        return res.status(400).json({ message: "Solo puedes reseñar tours completados" });
+      }
+
+      const tour = await storage.getTourById(booking.tourId);
+      if (!tour) {
+        return res.status(404).json({ message: "Tour no encontrado" });
+      }
+
+      const reviewData = insertReviewSchema.parse({
+        bookingId: parseInt(bookingId),
+        userId: req.user!.userId,
+        tourId: tour.id,
+        guideId: tour.guideId,
+        rating,
+        comment,
+      });
+
+      const review = await storage.createReview(reviewData);
+      res.status(201).json(review);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: error.errors[0].message });
+      }
+      console.error("Create review error:", error);
+      res.status(500).json({ message: "Error al crear reseña" });
+    }
+  });
+
+  // Get tour reviews
+  app.get("/api/tours/:id/reviews", async (req, res) => {
+    try {
+      const tourId = parseInt(req.params.id);
+      const reviews = await storage.getReviewsByTour(tourId);
+      
+      const reviewsWithUsers = await Promise.all(
+        reviews.map(async (review) => {
+          const user = await storage.getUserById(review.userId);
+          return { ...review, user: user ? sanitizeUser(user) : null };
+        })
+      );
+
+      res.json(reviewsWithUsers);
+    } catch (error) {
+      console.error("Get reviews error:", error);
+      res.status(500).json({ message: "Error al obtener reseñas" });
+    }
+  });
+
+  // Add review response (guide only)
+  app.patch("/api/reviews/:id/response", authenticate, requireRole(UserRole.GUIDE), async (req: AuthRequest, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { response } = req.body;
+      const updated = await storage.addReviewResponse(id, response);
+      res.json(updated);
+    } catch (error) {
+      console.error("Add response error:", error);
+      res.status(500).json({ message: "Error al agregar respuesta" });
+    }
+  });
+
   // ==================== GUIDE ROUTES ====================
 
-  // Get all guides (public)
+  // Get all approved guides (public)
   app.get("/api/guides", async (req, res) => {
     try {
-      const guides = await storage.getGuides();
-      res.json(guides.map(sanitizeUser));
+      const guides = await storage.getActiveGuides();
+      
+      const guidesWithProfiles = await Promise.all(
+        guides.map(async (guide) => {
+          const profile = await storage.getGuideProfile(guide.id);
+          const tourCount = (await storage.getToursByGuide(guide.id)).length;
+          return {
+            ...sanitizeUser(guide),
+            guideProfile: profile,
+            tourCount,
+          };
+        })
+      );
+
+      // Filter to only show approved guides
+      const approvedGuides = guidesWithProfiles.filter(
+        g => g.guideProfile?.status === GuideStatus.APPROVED
+      );
+
+      res.json(approvedGuides);
     } catch (error) {
       console.error("Get guides error:", error);
       res.status(500).json({ message: "Error al obtener guías" });
@@ -424,16 +832,113 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
     }
   });
 
+  // Get guide earnings
+  app.get("/api/guide/earnings", authenticate, requireRole(UserRole.GUIDE), async (req: AuthRequest, res) => {
+    try {
+      const payouts = await storage.getPayoutsByGuide(req.user!.userId);
+      const stats = await storage.getGuideStats(req.user!.userId);
+      res.json({
+        totalEarnings: stats.netEarnings,
+        totalCommissions: stats.totalCommissions,
+        payouts,
+      });
+    } catch (error) {
+      console.error("Get earnings error:", error);
+      res.status(500).json({ message: "Error al obtener ganancias" });
+    }
+  });
+
   // ==================== ADMIN ROUTES ====================
 
-  // Get all users (admin only)
+  // Get all users
   app.get("/api/admin/users", authenticate, requireRole(UserRole.ADMIN), async (req, res) => {
     try {
       const allUsers = await storage.getAllUsers();
-      res.json(allUsers.map(sanitizeUser));
+      
+      const usersWithProfiles = await Promise.all(
+        allUsers.map(async (user) => {
+          let guideProfile = null;
+          if (user.role === UserRole.GUIDE) {
+            guideProfile = await storage.getGuideProfile(user.id);
+          }
+          return { ...sanitizeUser(user), guideProfile };
+        })
+      );
+
+      res.json(usersWithProfiles);
     } catch (error) {
       console.error("Get all users error:", error);
       res.status(500).json({ message: "Error al obtener usuarios" });
+    }
+  });
+
+  // Get pending guides
+  app.get("/api/admin/guides/pending", authenticate, requireRole(UserRole.ADMIN), async (req, res) => {
+    try {
+      const pendingProfiles = await storage.getPendingGuides();
+      
+      const pendingGuides = await Promise.all(
+        pendingProfiles.map(async (profile) => {
+          const user = await storage.getUserById(profile.userId);
+          const docs = await storage.getDocumentsByUser(profile.userId);
+          return {
+            user: user ? sanitizeUser(user) : null,
+            profile,
+            documents: docs,
+          };
+        })
+      );
+
+      res.json(pendingGuides);
+    } catch (error) {
+      console.error("Get pending guides error:", error);
+      res.status(500).json({ message: "Error al obtener guías pendientes" });
+    }
+  });
+
+  // Approve guide
+  app.post("/api/admin/guides/:userId/approve", authenticate, requireRole(UserRole.ADMIN), async (req: AuthRequest, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const profile = await storage.approveGuide(userId, req.user!.userId);
+      
+      if (!profile) {
+        return res.status(404).json({ message: "Guía no encontrado" });
+      }
+
+      res.json({ message: "Guía aprobado exitosamente", profile });
+    } catch (error) {
+      console.error("Approve guide error:", error);
+      res.status(500).json({ message: "Error al aprobar guía" });
+    }
+  });
+
+  // Reject guide
+  app.post("/api/admin/guides/:userId/reject", authenticate, requireRole(UserRole.ADMIN), async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const profile = await storage.rejectGuide(userId);
+      
+      if (!profile) {
+        return res.status(404).json({ message: "Guía no encontrado" });
+      }
+
+      res.json({ message: "Guía rechazado", profile });
+    } catch (error) {
+      console.error("Reject guide error:", error);
+      res.status(500).json({ message: "Error al rechazar guía" });
+    }
+  });
+
+  // Verify document
+  app.post("/api/admin/documents/:id/verify", authenticate, requireRole(UserRole.ADMIN), async (req: AuthRequest, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const doc = await storage.verifyDocument(id, req.user!.userId);
+      res.json(doc);
+    } catch (error) {
+      console.error("Verify document error:", error);
+      res.status(500).json({ message: "Error al verificar documento" });
     }
   });
 
@@ -448,7 +953,26 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
     }
   });
 
-  // Get all bookings (admin only)
+  // Get all tours (admin)
+  app.get("/api/admin/tours", authenticate, requireRole(UserRole.ADMIN), async (req, res) => {
+    try {
+      const allTours = await storage.getAllTours();
+      
+      const toursWithGuides = await Promise.all(
+        allTours.map(async (tour) => {
+          const guide = await storage.getUserById(tour.guideId);
+          return { ...tour, guide: guide ? sanitizeUser(guide) : null };
+        })
+      );
+
+      res.json(toursWithGuides);
+    } catch (error) {
+      console.error("Get all tours error:", error);
+      res.status(500).json({ message: "Error al obtener tours" });
+    }
+  });
+
+  // Get all bookings
   app.get("/api/admin/bookings", authenticate, requireRole(UserRole.ADMIN), async (req, res) => {
     try {
       const allBookings = await storage.getAllBookings();
@@ -457,9 +981,10 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
         allBookings.map(async (booking) => {
           const tour = await storage.getTourById(booking.tourId);
           const user = await storage.getUserById(booking.userId);
+          const guide = tour ? await storage.getUserById(tour.guideId) : null;
           return {
             ...booking,
-            tour,
+            tour: tour ? { ...tour, guide: guide ? sanitizeUser(guide) : null } : null,
             user: user ? sanitizeUser(user) : null,
           };
         })
@@ -472,7 +997,22 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
     }
   });
 
-  // Update user (admin only)
+  // Get revenue stats
+  app.get("/api/admin/revenue", authenticate, requireRole(UserRole.ADMIN), async (req, res) => {
+    try {
+      const { startDate, endDate } = req.query;
+      const start = startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const end = endDate ? new Date(endDate as string) : new Date();
+      
+      const stats = await storage.getRevenueByPeriod(start, end);
+      res.json(stats);
+    } catch (error) {
+      console.error("Get revenue error:", error);
+      res.status(500).json({ message: "Error al obtener ingresos" });
+    }
+  });
+
+  // Update user (admin)
   app.patch("/api/admin/users/:id", authenticate, requireRole(UserRole.ADMIN), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -489,7 +1029,25 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
     }
   });
 
-  // Delete user (admin only)
+  // Toggle user active status
+  app.patch("/api/admin/users/:id/toggle", authenticate, requireRole(UserRole.ADMIN), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const user = await storage.getUserById(id);
+      
+      if (!user) {
+        return res.status(404).json({ message: "Usuario no encontrado" });
+      }
+
+      const updated = await storage.updateUser(id, { active: !user.active });
+      res.json(sanitizeUser(updated!));
+    } catch (error) {
+      console.error("Toggle user error:", error);
+      res.status(500).json({ message: "Error al cambiar estado" });
+    }
+  });
+
+  // Delete user (admin)
   app.delete("/api/admin/users/:id", authenticate, requireRole(UserRole.ADMIN), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -499,10 +1057,50 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
         return res.status(404).json({ message: "Usuario no encontrado" });
       }
 
-      res.json({ message: "Usuario eliminado correctamente" });
+      res.json({ message: "Usuario eliminado" });
     } catch (error) {
       console.error("Delete user error:", error);
       res.status(500).json({ message: "Error al eliminar usuario" });
+    }
+  });
+
+  // ==================== SETTINGS ROUTES ====================
+
+  // Get commission rate
+  app.get("/api/admin/settings/commission", authenticate, requireRole(UserRole.ADMIN), async (req, res) => {
+    try {
+      const rate = await storage.getCommissionRate();
+      res.json({ commissionRate: rate });
+    } catch (error) {
+      console.error("Get commission error:", error);
+      res.status(500).json({ message: "Error al obtener comisión" });
+    }
+  });
+
+  // Set commission rate
+  app.put("/api/admin/settings/commission", authenticate, requireRole(UserRole.ADMIN), async (req: AuthRequest, res) => {
+    try {
+      const { rate } = req.body;
+      if (rate < 0 || rate > 100) {
+        return res.status(400).json({ message: "La comisión debe estar entre 0 y 100" });
+      }
+      
+      await storage.setSetting("commission_rate", rate.toString(), "Porcentaje de comisión", req.user!.userId);
+      res.json({ message: "Comisión actualizada", commissionRate: rate });
+    } catch (error) {
+      console.error("Set commission error:", error);
+      res.status(500).json({ message: "Error al actualizar comisión" });
+    }
+  });
+
+  // Get pending payouts
+  app.get("/api/admin/payouts/pending", authenticate, requireRole(UserRole.ADMIN), async (req, res) => {
+    try {
+      const payouts = await storage.getPendingPayouts();
+      res.json(payouts);
+    } catch (error) {
+      console.error("Get pending payouts error:", error);
+      res.status(500).json({ message: "Error al obtener pagos pendientes" });
     }
   });
 }
