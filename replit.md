@@ -173,3 +173,10 @@ The database includes sample data:
 - Fixed authentication race condition: login/register now properly redirects to role-based dashboards
 - Updated auth-context to return user from login/register for immediate role-based navigation
 - Dashboard protection now checks localStorage to handle React state timing issues
+- **Enhanced Tour Management (Dec 11)**:
+  - TourForm with complete fields: title, location, description, price, duration, maxGroupSize, category, imageUrl, difficulty, requirements, includes/excludes lists, active/featured toggles
+  - TourAvailabilityManager for managing tour availability dates with add/delete functionality
+  - Guide dashboard "Mis Tours" section with card-based layout showing all tour info
+  - Actions: Edit tour (modal), Delete tour (confirmation), Toggle active/inactive, Manage availability
+  - Improved cache invalidation across related queries (tours, featured, bookings)
+  - Complete test coverage with data-testid attributes

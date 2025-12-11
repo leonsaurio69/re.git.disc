@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Map, Calendar, DollarSign, 
   Settings, LogOut, Plus, MapPin, Loader2, AlertCircle,
   User, FileText, Upload, CheckCircle, Clock, XCircle,
-  Star, TrendingUp
+  Star, TrendingUp, Edit, Trash2, Eye, ToggleLeft, ToggleRight, CalendarDays
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -13,6 +13,7 @@ import { StatsCard } from "@/components/StatsCard";
 import { BookingsTable, type Booking } from "@/components/BookingsTable";
 import { TourCard } from "@/components/TourCard";
 import { TourForm } from "@/components/TourForm";
+import { TourAvailabilityManager } from "@/components/TourAvailabilityManager";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -35,10 +36,28 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/lib/auth-context";
 import { toursApi, bookingsApi, guidesApi } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
@@ -75,6 +94,9 @@ const statusLabels: Record<string, string> = {
 export default function GuideDashboardPage() {
   const [activeTab, setActiveTab] = useState<TabType>("overview");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [editingTour, setEditingTour] = useState<any | null>(null);
+  const [deletingTourId, setDeletingTourId] = useState<number | null>(null);
+  const [managingAvailabilityTour, setManagingAvailabilityTour] = useState<any | null>(null);
   const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -135,6 +157,52 @@ export default function GuideDashboardPage() {
       toast({ title: "Tour creado exitosamente" });
       setIsCreateDialogOpen(false);
       queryClient.invalidateQueries({ queryKey: ["/api/guide/tours"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateTourMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => toursApi.update(id, data),
+    onSuccess: (_, variables) => {
+      toast({ title: "Tour actualizado exitosamente" });
+      setEditingTour(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/guide/tours"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tours"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tours/featured"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tours", variables.id] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteTourMutation = useMutation({
+    mutationFn: (id: number) => toursApi.delete(id),
+    onSuccess: () => {
+      toast({ title: "Tour eliminado" });
+      setDeletingTourId(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/guide/tours"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tours"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tours/featured"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/guide/bookings"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const toggleTourMutation = useMutation({
+    mutationFn: (id: number) => toursApi.toggleActive(id),
+    onSuccess: (data) => {
+      toast({ 
+        title: data.active ? "Tour activado" : "Tour desactivado",
+        description: data.active ? "El tour ahora es visible para los clientes" : "El tour ya no es visible para los clientes"
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/guide/tours"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tours"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tours/featured"] });
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -600,8 +668,15 @@ export default function GuideDashboardPage() {
                     <DialogContent className="max-h-[90vh] overflow-auto sm:max-w-[600px]">
                       <DialogHeader>
                         <DialogTitle>Crear Nuevo Tour</DialogTitle>
+                        <DialogDescription>
+                          Completa los detalles de tu nuevo tour turístico
+                        </DialogDescription>
                       </DialogHeader>
-                      <TourForm onSubmit={(data) => createTourMutation.mutate(data)} />
+                      <TourForm 
+                        onSubmit={(data) => createTourMutation.mutate(data)} 
+                        onCancel={() => setIsCreateDialogOpen(false)}
+                        isPending={createTourMutation.isPending}
+                      />
                     </DialogContent>
                   </Dialog>
                 </div>
@@ -610,20 +685,106 @@ export default function GuideDashboardPage() {
                   <div className="flex h-64 items-center justify-center">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   </div>
-                ) : displayTours.length > 0 ? (
-                  <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                    {displayTours.map((tour: any) => (
-                      <div key={tour.id} className="relative">
-                        {!tour.active && (
-                          <Badge 
-                            variant="secondary" 
-                            className="absolute right-2 top-2 z-10"
-                          >
-                            Inactivo
-                          </Badge>
-                        )}
-                        <TourCard {...tour} />
-                      </div>
+                ) : myTours && myTours.length > 0 ? (
+                  <div className="space-y-4">
+                    {myTours.map((tour: any) => (
+                      <Card key={tour.id} className={!tour.active ? "opacity-60" : ""} data-testid={`tour-card-${tour.id}`}>
+                        <CardContent className="p-4">
+                          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                            <div className="flex gap-4">
+                              <div className="h-20 w-28 flex-shrink-0 overflow-hidden rounded-md">
+                                <img 
+                                  src={tour.imageUrl || defaultTourImage} 
+                                  alt={tour.title}
+                                  className="h-full w-full object-cover"
+                                />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h3 className="font-semibold truncate">{tour.title}</h3>
+                                  <Badge variant={tour.active ? "default" : "secondary"}>
+                                    {tour.active ? "Activo" : "Inactivo"}
+                                  </Badge>
+                                  {tour.featured && (
+                                    <Badge variant="outline" className="border-yellow-500 text-yellow-600">
+                                      Destacado
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+                                  <MapPin className="h-3 w-3" />
+                                  <span>{tour.location}</span>
+                                </div>
+                                <div className="flex items-center gap-4 mt-2 text-sm">
+                                  <span className="font-medium text-primary">${tour.price}</span>
+                                  <span className="text-muted-foreground">{tour.duration}</span>
+                                  <span className="text-muted-foreground">Max: {tour.maxGroupSize} personas</span>
+                                  {tour.rating > 0 && (
+                                    <div className="flex items-center gap-1">
+                                      <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                                      <span>{tour.rating.toFixed(1)}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap justify-end">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setManagingAvailabilityTour(tour)}
+                                data-testid={`button-availability-${tour.id}`}
+                              >
+                                <CalendarDays className="mr-2 h-4 w-4" />
+                                Disponibilidad
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setLocation(`/tours/${tour.id}`)}
+                                data-testid={`button-view-${tour.id}`}
+                              >
+                                <Eye className="mr-2 h-4 w-4" />
+                                Ver
+                              </Button>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="outline" size="sm" data-testid={`button-actions-${tour.id}`}>
+                                    <Settings className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => setEditingTour(tour)}>
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Editar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => toggleTourMutation.mutate(tour.id)}>
+                                    {tour.active ? (
+                                      <>
+                                        <ToggleLeft className="mr-2 h-4 w-4" />
+                                        Desactivar
+                                      </>
+                                    ) : (
+                                      <>
+                                        <ToggleRight className="mr-2 h-4 w-4" />
+                                        Activar
+                                      </>
+                                    )}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem 
+                                    onClick={() => setDeletingTourId(tour.id)}
+                                    className="text-destructive"
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Eliminar
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
                     ))}
                   </div>
                 ) : (
@@ -644,6 +805,62 @@ export default function GuideDashboardPage() {
                     </CardContent>
                   </Card>
                 )}
+
+                <Dialog open={editingTour !== null} onOpenChange={(open) => !open && setEditingTour(null)}>
+                  <DialogContent className="max-h-[90vh] overflow-auto sm:max-w-[600px]">
+                    <DialogHeader>
+                      <DialogTitle>Editar Tour</DialogTitle>
+                      <DialogDescription>
+                        Actualiza la información de tu tour
+                      </DialogDescription>
+                    </DialogHeader>
+                    {editingTour && (
+                      <TourForm 
+                        initialData={editingTour}
+                        isEditing
+                        onSubmit={(data) => updateTourMutation.mutate({ id: editingTour.id, data })}
+                        onCancel={() => setEditingTour(null)}
+                        isPending={updateTourMutation.isPending}
+                      />
+                    )}
+                  </DialogContent>
+                </Dialog>
+
+                <Dialog open={managingAvailabilityTour !== null} onOpenChange={(open) => !open && setManagingAvailabilityTour(null)}>
+                  <DialogContent className="max-h-[90vh] overflow-auto sm:max-w-[700px]">
+                    {managingAvailabilityTour && (
+                      <TourAvailabilityManager 
+                        tourId={managingAvailabilityTour.id}
+                        tourTitle={managingAvailabilityTour.title}
+                        maxGroupSize={managingAvailabilityTour.maxGroupSize || 10}
+                      />
+                    )}
+                  </DialogContent>
+                </Dialog>
+
+                <AlertDialog open={deletingTourId !== null} onOpenChange={(open) => !open && setDeletingTourId(null)}>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>¿Eliminar tour?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Esta acción no se puede deshacer. Se eliminarán todas las disponibilidades asociadas.
+                        Las reservas existentes no se verán afectadas.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => deletingTourId && deleteTourMutation.mutate(deletingTourId)}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        {deleteTourMutation.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : null}
+                        Eliminar
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             )}
 

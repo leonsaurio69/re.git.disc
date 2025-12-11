@@ -1,0 +1,76 @@
+Ahora que la autenticación y los roles funcionan correctamente, quiero que desarrolles TODO el módulo de Tours y Reservas sin modificar lo que ya funciona. Mantén la misma arquitectura, estilo y estructura del proyecto actual.
+
+OBJETIVO:
+Crear el sistema completo de tours y reservas para los tres roles: usuario, guía y admin.
+
+=== FUNCIONALIDADES A IMPLEMENTAR ===
+
+1. MÓDULO PARA GUÍAS
+Crear un panel donde el guía pueda:
+- Crear un tour
+- Editar un tour
+- Eliminar un tour
+- Subir fotos del tour
+- Definir precio
+- Definir ubicación
+- Añadir descripción
+- Establecer fechas disponibles
+- Activar / desactivar un tour
+
+2. MÓDULO PARA USUARIOS
+Los usuarios deben poder:
+- Ver listado de todos los tours disponibles
+- Filtrar por precio, ubicación o fecha
+- Ver detalles completos del tour
+- Ver fotos
+- Ver disponibilidad
+- Reservar un tour
+- Ver sus reservas en su dashboard
+
+3. MÓDULO DE RESERVAS
+Implementar:
+- Crear reserva
+- Cambiar estado de reserva: pendiente → confirmada → completada o cancelada
+- Notificación para el guía cuando recibe una reserva
+- Notificación para el usuario cuando la reserva es confirmada
+- El admin puede ver TODAS las reservas
+
+4. ADMINISTRACIÓN (ADMIN/CEO)
+El admin debe ver:
+- Lista de todos los tours
+- Lista de reservas
+- Tours por guía
+- Estado de cada reserva
+
+5. BASE DE DATOS
+Crear o asegurar las siguientes tablas:
+- tours
+- tour_images
+- reservations
+- payments (si no existe)
+Cada tabla debe tener sus relaciones correctamente definidas con foreign keys.
+
+6. PROTECCIÓN DE RUTAS
+- Solo guías pueden crear/editar tours
+- Solo usuarios pueden reservar
+- Admin puede ver todo pero no modificar tours
+- Validar roles en backend y frontend
+
+7. DISEÑO Y UX
+- Mantén el mismo estilo visual ya creado
+- Usa componentes coherentes
+- Navegación clara entre secciones
+- Formularios con validación
+
+8. ENTREGA FINAL
+Cuando termines, explícame:
+- Qué archivos creaste
+- Qué pantallas agregaste
+- Cómo funciona el flujo completo:
+   guía → crea tour → usuario reserva → guía confirma → admin visualiza
+- Indícame cómo probar cada rol paso a paso
+
+IMPORTANTE:
+NO borrar nada que ya funciona.
+NO modificar autenticación ni dashboard existentes.
+Solo agregar, conectar y expandir.
