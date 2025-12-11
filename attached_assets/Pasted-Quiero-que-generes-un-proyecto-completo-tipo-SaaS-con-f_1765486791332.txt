@@ -1,0 +1,150 @@
+Quiero que generes un proyecto completo tipo SaaS con frontend, backend y base de datos.
+Este proyecto es una plataforma de turismo con 3 roles:
+
+1. Usuario (cliente)
+
+
+2. Guía turístico (publica tours)
+
+
+3. Admin/CEO (control total)
+
+
+
+Tecnologías que debes usar:
+
+Frontend: React + Vite + TailwindCSS
+
+Backend: Node.js + Express
+
+Base de datos: PostgreSQL (usando Prisma ORM)
+
+Autenticación: JWT + bcrypt para hash
+
+Librerías recomendadas: axios, react-router-dom, zustand para estado
+
+Estructura backend en /server
+
+Estructura frontend en /client
+
+
+Funcionalidades obligatorias:
+
+1. Autenticación y roles
+
+Registro e inicio de sesión
+
+Cada usuario tiene un rol: "user", "guide" o "admin"
+
+Middleware para validar roles
+
+Tokens JWT
+
+
+2. Modelos en Prisma
+
+Crea estos modelos:
+
+User {
+  id        String @id @default(uuid())
+  name      String
+  email     String @unique
+  password  String
+  role      String
+  createdAt DateTime @default(now())
+}
+
+Tour {
+  id          String @id @default(uuid())
+  title       String
+  description String
+  price       Float
+  image       String?
+  guideId     String
+  guide       User @relation(fields: [guideId], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+Booking {
+  id        String @id @default(uuid())
+  userId    String
+  tourId    String
+  date      DateTime
+  status    String
+  createdAt DateTime @default(now())
+}
+
+3. Endpoints backend
+
+Genera un CRUD completo para:
+
+Usuarios
+
+Tours
+
+Reservas
+
+
+Además:
+
+/auth/register
+
+/auth/login
+
+/tours/create (solo guía)
+
+/tours/list
+
+/booking/create
+
+/admin/users
+
+/admin/dashboard
+
+
+4. Frontend páginas
+
+Genera páginas básicas:
+
+/login
+
+/register
+
+/dashboard-user
+
+/dashboard-guide
+
+/dashboard-admin
+
+/tours (listado para todos)
+
+/tours/:id (detalle)
+
+/create-tour (solo guía)
+
+
+Cada dashboard debe mostrar:
+
+Para usuario: sus reservas
+
+Para guía: sus tours
+
+Para admin: métricas básicas
+
+
+5. Instrucciones adicionales
+
+Asegúrate de instalar todas las dependencias necesarias
+
+Configura scripts en package.json
+
+Conecta Prisma con PostgreSQL
+
+Inicializa la base de datos
+
+Genera código base funcional sin errores
+
+Prepara el proyecto para expandir funciones después
+
+
+Crea todo automáticamente.

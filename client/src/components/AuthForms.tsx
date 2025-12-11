@@ -1,17 +1,19 @@
 import { useState } from "react";
-import { Eye, EyeOff, Mail, Lock, User, MapPin } from "lucide-react";
+import { useLocation } from "wouter";
+import { Eye, EyeOff, Mail, Lock, User, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Link } from "wouter";
+import { useAuth } from "@/lib/auth-context";
+import { useToast } from "@/hooks/use-toast";
 
-interface LoginFormProps {
-  onSubmit?: (data: { email: string; password: string }) => void;
-}
-
-export function LoginForm({ onSubmit }: LoginFormProps) {
+export function LoginForm() {
+  const [, setLocation] = useLocation();
+  const { login } = useAuth();
+  const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -20,12 +22,23 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    if (onSubmit) {
-      onSubmit({ email, password });
-    } else {
-      console.log("Login:", { email, password });
+
+    try {
+      await login(email, password);
+      toast({
+        title: "Bienvenido",
+        description: "Has iniciado sesión correctamente",
+      });
+      setLocation("/dashboard");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo iniciar sesión",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
     }
-    setTimeout(() => setIsLoading(false), 1000);
   };
 
   return (
@@ -50,6 +63,7 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                disabled={isLoading}
                 data-testid="input-login-email"
               />
             </div>
@@ -66,6 +80,7 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                disabled={isLoading}
                 data-testid="input-login-password"
               />
               <Button
@@ -79,15 +94,17 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
               </Button>
             </div>
           </div>
-          <div className="text-right">
-            <Link href="/forgot-password" className="text-sm text-primary hover:underline">
-              ¿Olvidaste tu contraseña?
-            </Link>
-          </div>
         </CardContent>
         <CardFooter className="flex flex-col gap-4">
           <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-login-submit">
-            {isLoading ? "Iniciando..." : "Iniciar Sesión"}
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Iniciando...
+              </>
+            ) : (
+              "Iniciar Sesión"
+            )}
           </Button>
           <p className="text-center text-sm text-muted-foreground">
             ¿No tienes cuenta?{" "}
@@ -101,32 +118,48 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
   );
 }
 
-interface RegisterFormProps {
-  onSubmit?: (data: { name: string; email: string; password: string; role: string }) => void;
-}
-
-export function RegisterForm({ onSubmit }: RegisterFormProps) {
+export function RegisterForm() {
+  const [, setLocation] = useLocation();
+  const { register } = useAuth();
+  const { toast } = useToast();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [role, setRole] = useState("client");
+  const [role, setRole] = useState("user");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (password !== confirmPassword) {
-      console.log("Passwords don't match");
+      toast({
+        title: "Error",
+        description: "Las contraseñas no coinciden",
+        variant: "destructive",
+      });
       return;
     }
+
     setIsLoading(true);
-    if (onSubmit) {
-      onSubmit({ name, email, password, role });
-    } else {
-      console.log("Register:", { name, email, password, role });
+
+    try {
+      await register(name, email, password, role);
+      toast({
+        title: "Cuenta creada",
+        description: "Tu cuenta ha sido creada exitosamente",
+      });
+      setLocation("/dashboard");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo crear la cuenta",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
     }
-    setTimeout(() => setIsLoading(false), 1000);
   };
 
   return (
@@ -151,6 +184,7 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
+                disabled={isLoading}
                 data-testid="input-register-name"
               />
             </div>
@@ -167,6 +201,7 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                disabled={isLoading}
                 data-testid="input-register-email"
               />
             </div>
@@ -184,6 +219,7 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={8}
+                disabled={isLoading}
                 data-testid="input-register-password"
               />
               <Button
@@ -209,6 +245,7 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
+                disabled={isLoading}
                 data-testid="input-register-confirm-password"
               />
             </div>
@@ -217,8 +254,8 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
             <Label>¿Cómo te gustaría usar TourExplora?</Label>
             <RadioGroup value={role} onValueChange={setRole} className="flex flex-col gap-3">
               <div className="flex items-center space-x-3 rounded-md border p-3 hover-elevate">
-                <RadioGroupItem value="client" id="client" data-testid="radio-role-client" />
-                <Label htmlFor="client" className="flex-1 cursor-pointer">
+                <RadioGroupItem value="user" id="user" data-testid="radio-role-user" />
+                <Label htmlFor="user" className="flex-1 cursor-pointer">
                   <span className="font-medium">Viajero</span>
                   <p className="text-sm text-muted-foreground">Quiero reservar tours</p>
                 </Label>
@@ -235,7 +272,14 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
         </CardContent>
         <CardFooter className="flex flex-col gap-4">
           <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-register-submit">
-            {isLoading ? "Creando cuenta..." : "Crear Cuenta"}
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creando cuenta...
+              </>
+            ) : (
+              "Crear Cuenta"
+            )}
           </Button>
           <p className="text-center text-sm text-muted-foreground">
             ¿Ya tienes cuenta?{" "}

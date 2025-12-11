@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Menu, Search, X, User, LogIn, MapPin } from "lucide-react";
+import { Menu, Search, X, User, LogIn, MapPin, LayoutDashboard, Shield, Compass } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "./ThemeToggle";
+import { useAuth } from "@/lib/auth-context";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,20 +13,31 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-interface HeaderProps {
-  isLoggedIn?: boolean;
-  userRole?: "client" | "guide" | "admin";
-  userName?: string;
-}
-
-export function Header({ isLoggedIn = false, userRole, userName }: HeaderProps) {
-  const [location] = useLocation();
+export function Header() {
+  const [, setLocation] = useLocation();
+  const { user, isAuthenticated, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Searching for:", searchQuery);
+    if (searchQuery.trim()) {
+      setLocation(`/tours?search=${encodeURIComponent(searchQuery)}`);
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    setLocation("/");
+  };
+
+  const getDashboardLink = () => {
+    if (!user) return "/dashboard";
+    switch (user.role) {
+      case "admin": return "/admin/dashboard";
+      case "guide": return "/guide/dashboard";
+      default: return "/dashboard";
+    }
   };
 
   return (
@@ -55,7 +67,7 @@ export function Header({ isLoggedIn = false, userRole, userName }: HeaderProps) 
             <Link href="/tours">
               <Button variant="ghost" data-testid="link-tours">Explorar</Button>
             </Link>
-            {!isLoggedIn ? (
+            {!isAuthenticated ? (
               <>
                 <Link href="/login">
                   <Button variant="ghost" data-testid="link-login">
@@ -75,26 +87,35 @@ export function Header({ isLoggedIn = false, userRole, userName }: HeaderProps) 
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem data-testid="menu-item-profile">
-                    Mi Perfil
-                  </DropdownMenuItem>
-                  {userRole === "guide" && (
-                    <DropdownMenuItem data-testid="menu-item-my-tours">
-                      Mis Tours
+                  <div className="px-2 py-1.5">
+                    <p className="text-sm font-medium">{user?.name}</p>
+                    <p className="text-xs text-muted-foreground">{user?.email}</p>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <Link href={getDashboardLink()}>
+                    <DropdownMenuItem data-testid="menu-item-dashboard">
+                      <LayoutDashboard className="mr-2 h-4 w-4" />
+                      Dashboard
                     </DropdownMenuItem>
+                  </Link>
+                  {user?.role === "guide" && (
+                    <Link href="/guide/dashboard">
+                      <DropdownMenuItem data-testid="menu-item-my-tours">
+                        <Compass className="mr-2 h-4 w-4" />
+                        Mis Tours
+                      </DropdownMenuItem>
+                    </Link>
                   )}
-                  {userRole === "client" && (
-                    <DropdownMenuItem data-testid="menu-item-my-bookings">
-                      Mis Reservas
-                    </DropdownMenuItem>
-                  )}
-                  {userRole === "admin" && (
-                    <DropdownMenuItem data-testid="menu-item-admin">
-                      Panel Admin
-                    </DropdownMenuItem>
+                  {user?.role === "admin" && (
+                    <Link href="/admin/dashboard">
+                      <DropdownMenuItem data-testid="menu-item-admin">
+                        <Shield className="mr-2 h-4 w-4" />
+                        Panel Admin
+                      </DropdownMenuItem>
+                    </Link>
                   )}
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem data-testid="menu-item-logout">
+                  <DropdownMenuItem onClick={handleLogout} data-testid="menu-item-logout">
                     Cerrar Sesión
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -133,7 +154,7 @@ export function Header({ isLoggedIn = false, userRole, userName }: HeaderProps) 
               <Link href="/tours">
                 <Button variant="ghost" className="w-full justify-start">Explorar</Button>
               </Link>
-              {!isLoggedIn ? (
+              {!isAuthenticated ? (
                 <>
                   <Link href="/login">
                     <Button variant="ghost" className="w-full justify-start">
@@ -147,10 +168,10 @@ export function Header({ isLoggedIn = false, userRole, userName }: HeaderProps) 
                 </>
               ) : (
                 <>
-                  <Link href="/profile">
-                    <Button variant="ghost" className="w-full justify-start">Mi Perfil</Button>
+                  <Link href={getDashboardLink()}>
+                    <Button variant="ghost" className="w-full justify-start">Dashboard</Button>
                   </Link>
-                  <Button variant="ghost" className="w-full justify-start text-destructive">
+                  <Button variant="ghost" className="w-full justify-start text-destructive" onClick={handleLogout}>
                     Cerrar Sesión
                   </Button>
                 </>
