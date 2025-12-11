@@ -1,19 +1,26 @@
 import { useState } from "react";
-import { Calendar, Users, CreditCard, Check } from "lucide-react";
+import { useLocation } from "wouter";
+import { Calendar, Users, CreditCard, Check, Loader2 } from "lucide-react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { useAuth } from "@/lib/auth-context";
+import { bookingsApi } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 
 interface BookingCardProps {
+  tourId: number;
   tourTitle: string;
   pricePerPerson: number;
   maxGroupSize: number;
-  onBook?: (data: { date: string; guests: number }) => void;
 }
 
-export function BookingCard({ tourTitle, pricePerPerson, maxGroupSize, onBook }: BookingCardProps) {
+export function BookingCard({ tourId, tourTitle, pricePerPerson, maxGroupSize }: BookingCardProps) {
+  const [, setLocation] = useLocation();
+  const { isAuthenticated } = useAuth();
+  const { toast } = useToast();
   const [date, setDate] = useState("");
   const [guests, setGuests] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
@@ -22,14 +29,34 @@ export function BookingCard({ tourTitle, pricePerPerson, maxGroupSize, onBook }:
   const serviceFee = Math.round(totalPrice * 0.1);
   const grandTotal = totalPrice + serviceFee;
 
-  const handleBook = () => {
-    setIsLoading(true);
-    if (onBook) {
-      onBook({ date, guests });
-    } else {
-      console.log("Booking:", { date, guests, totalPrice: grandTotal });
+  const handleBook = async () => {
+    if (!isAuthenticated) {
+      toast({
+        title: "Inicia sesión",
+        description: "Debes iniciar sesión para hacer una reserva",
+        variant: "destructive",
+      });
+      setLocation("/login");
+      return;
     }
-    setTimeout(() => setIsLoading(false), 1500);
+
+    setIsLoading(true);
+    try {
+      await bookingsApi.create(tourId, date, guests);
+      toast({
+        title: "Reserva exitosa",
+        description: `Has reservado "${tourTitle}" para ${guests} persona(s)`,
+      });
+      setLocation("/dashboard");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo completar la reserva",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -51,6 +78,7 @@ export function BookingCard({ tourTitle, pricePerPerson, maxGroupSize, onBook }:
               className="pl-10"
               value={date}
               onChange={(e) => setDate(e.target.value)}
+              min={new Date().toISOString().split("T")[0]}
               data-testid="input-booking-date"
             />
           </div>
@@ -101,8 +129,17 @@ export function BookingCard({ tourTitle, pricePerPerson, maxGroupSize, onBook }:
           disabled={!date || isLoading}
           data-testid="button-confirm-booking"
         >
-          <CreditCard className="mr-2 h-4 w-4" />
-          {isLoading ? "Procesando..." : "Reservar Ahora"}
+          {isLoading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Procesando...
+            </>
+          ) : (
+            <>
+              <CreditCard className="mr-2 h-4 w-4" />
+              Reservar Ahora
+            </>
+          )}
         </Button>
         <p className="flex items-center gap-1 text-xs text-muted-foreground">
           <Check className="h-3 w-3" />

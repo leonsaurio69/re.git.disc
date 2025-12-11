@@ -1,5 +1,6 @@
-import { MapPin, Shield, Clock, Star } from "lucide-react";
+import { MapPin, Shield, Clock, Star, Loader2 } from "lucide-react";
 import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { Header } from "@/components/Header";
 import { HeroSection } from "@/components/HeroSection";
 import { TourCard } from "@/components/TourCard";
@@ -7,85 +8,11 @@ import { GuideCard } from "@/components/GuideCard";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { toursApi, guidesApi } from "@/lib/api";
 
 import heroImage from "@assets/generated_images/caribbean_mexico_beach_paradise.png";
-import machuPicchu from "@assets/generated_images/machu_picchu_dramatic_sunrise.png";
-import beach from "@assets/generated_images/caribbean_mexico_beach_paradise.png";
-import rome from "@assets/generated_images/rome_colosseum_golden_hour.png";
-import maleGuide from "@assets/generated_images/latino_male_tour_guide_portrait.png";
-import femaleGuide from "@assets/generated_images/latina_female_tour_guide_portrait.png";
-
-// todo: remove mock functionality
-const featuredTours = [
-  {
-    id: "t1",
-    title: "Aventura Épica en Machu Picchu - Camino del Inca",
-    location: "Cusco, Perú",
-    price: 299,
-    duration: "4 días",
-    maxGroupSize: 12,
-    rating: 4.9,
-    reviewCount: 128,
-    imageUrl: machuPicchu,
-    guideAvatarUrl: maleGuide,
-    guideName: "Carlos Mendoza",
-    featured: true,
-  },
-  {
-    id: "t2",
-    title: "Paraíso Tropical - Snorkel y Playa Privada",
-    location: "Cancún, México",
-    price: 99,
-    duration: "6 horas",
-    maxGroupSize: 8,
-    rating: 4.8,
-    reviewCount: 85,
-    imageUrl: beach,
-    guideAvatarUrl: femaleGuide,
-    guideName: "María González",
-    featured: true,
-  },
-  {
-    id: "t3",
-    title: "Roma Imperial - Tour Histórico Completo",
-    location: "Roma, Italia",
-    price: 149,
-    duration: "8 horas",
-    maxGroupSize: 15,
-    rating: 4.7,
-    reviewCount: 203,
-    imageUrl: rome,
-    guideAvatarUrl: maleGuide,
-    guideName: "Marco Rossi",
-    featured: false,
-  },
-];
-
-// todo: remove mock functionality
-const featuredGuides = [
-  {
-    id: "g1",
-    name: "Carlos Mendoza",
-    location: "Cusco, Perú",
-    avatarUrl: maleGuide,
-    rating: 4.9,
-    reviewCount: 128,
-    tourCount: 8,
-    specialties: ["Aventura", "Trekking", "Historia Inca"],
-    verified: true,
-  },
-  {
-    id: "g2",
-    name: "María González",
-    location: "Cancún, México",
-    avatarUrl: femaleGuide,
-    rating: 4.8,
-    reviewCount: 85,
-    tourCount: 12,
-    specialties: ["Playa", "Snorkel", "Cultura Maya"],
-    verified: true,
-  },
-];
+import defaultTourImage from "@assets/generated_images/machu_picchu_dramatic_sunrise.png";
+import defaultGuideImage from "@assets/generated_images/latino_male_tour_guide_portrait.png";
 
 const benefits = [
   {
@@ -111,6 +38,43 @@ const benefits = [
 ];
 
 export default function HomePage() {
+  const { data: featuredTours, isLoading: toursLoading } = useQuery({
+    queryKey: ["/api/tours/featured"],
+    queryFn: () => toursApi.getFeatured(6),
+  });
+
+  const { data: guides, isLoading: guidesLoading } = useQuery({
+    queryKey: ["/api/guides"],
+    queryFn: () => guidesApi.getAll(),
+  });
+
+  const displayTours = featuredTours?.map((tour: any) => ({
+    id: tour.id,
+    title: tour.title,
+    location: tour.location,
+    price: tour.price,
+    duration: tour.duration,
+    maxGroupSize: tour.maxGroupSize || 10,
+    rating: tour.rating || 4.8,
+    reviewCount: tour.reviewCount || 0,
+    imageUrl: tour.imageUrl || defaultTourImage,
+    guideAvatarUrl: tour.guide?.avatarUrl || defaultGuideImage,
+    guideName: tour.guide?.name || "Guía Experto",
+    featured: tour.featured,
+  })) || [];
+
+  const displayGuides = guides?.slice(0, 4).map((guide: any) => ({
+    id: guide.id,
+    name: guide.name,
+    location: guide.location || "Guía Verificado",
+    avatarUrl: guide.avatarUrl || defaultGuideImage,
+    rating: guide.rating || 4.8,
+    reviewCount: guide.reviewCount || 0,
+    tourCount: guide.tourCount || 0,
+    specialties: ["Aventura", "Cultura"],
+    verified: guide.verified || false,
+  })) || [];
+
   return (
     <div className="flex min-h-screen flex-col">
       <Header />
@@ -133,11 +97,29 @@ export default function HomePage() {
                 </Button>
               </Link>
             </div>
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {featuredTours.map((tour) => (
-                <TourCard key={tour.id} {...tour} />
-              ))}
-            </div>
+            {toursLoading ? (
+              <div className="flex h-64 items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : displayTours.length > 0 ? (
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {displayTours.map((tour: any) => (
+                  <TourCard key={tour.id} {...tour} />
+                ))}
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center p-8 text-center">
+                  <MapPin className="mb-4 h-12 w-12 text-muted-foreground" />
+                  <p className="text-muted-foreground">
+                    No hay tours disponibles aún. ¡Sé el primero en crear uno!
+                  </p>
+                  <Link href="/register">
+                    <Button className="mt-4">Registrarse como Guía</Button>
+                  </Link>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </section>
 
@@ -180,11 +162,25 @@ export default function HomePage() {
                 </Button>
               </Link>
             </div>
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-              {featuredGuides.map((guide) => (
-                <GuideCard key={guide.id} {...guide} />
-              ))}
-            </div>
+            {guidesLoading ? (
+              <div className="flex h-48 items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : displayGuides.length > 0 ? (
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+                {displayGuides.map((guide: any) => (
+                  <GuideCard key={guide.id} {...guide} />
+                ))}
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center p-8 text-center">
+                  <p className="text-muted-foreground">
+                    ¡Únete como guía y comparte tus experiencias!
+                  </p>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </section>
 

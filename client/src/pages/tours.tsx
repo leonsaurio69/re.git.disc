@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Search, SlidersHorizontal, X } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Search, SlidersHorizontal, Loader2 } from "lucide-react";
 import { Header } from "@/components/Header";
 import { TourCard } from "@/components/TourCard";
 import { Footer } from "@/components/Footer";
@@ -8,97 +9,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
+import { Card, CardContent } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { toursApi } from "@/lib/api";
 
-import machuPicchu from "@assets/generated_images/machu_picchu_dramatic_sunrise.png";
-import beach from "@assets/generated_images/caribbean_mexico_beach_paradise.png";
-import rome from "@assets/generated_images/rome_colosseum_golden_hour.png";
-import maleGuide from "@assets/generated_images/latino_male_tour_guide_portrait.png";
-import femaleGuide from "@assets/generated_images/latina_female_tour_guide_portrait.png";
-
-// todo: remove mock functionality
-const allTours = [
-  {
-    id: "t1",
-    title: "Aventura Épica en Machu Picchu - Camino del Inca",
-    location: "Cusco, Perú",
-    price: 299,
-    duration: "4 días",
-    maxGroupSize: 12,
-    rating: 4.9,
-    reviewCount: 128,
-    imageUrl: machuPicchu,
-    guideAvatarUrl: maleGuide,
-    guideName: "Carlos Mendoza",
-    featured: true,
-  },
-  {
-    id: "t2",
-    title: "Paraíso Tropical - Snorkel y Playa Privada",
-    location: "Cancún, México",
-    price: 99,
-    duration: "6 horas",
-    maxGroupSize: 8,
-    rating: 4.8,
-    reviewCount: 85,
-    imageUrl: beach,
-    guideAvatarUrl: femaleGuide,
-    guideName: "María González",
-    featured: true,
-  },
-  {
-    id: "t3",
-    title: "Roma Imperial - Tour Histórico Completo",
-    location: "Roma, Italia",
-    price: 149,
-    duration: "8 horas",
-    maxGroupSize: 15,
-    rating: 4.7,
-    reviewCount: 203,
-    imageUrl: rome,
-    guideAvatarUrl: maleGuide,
-    guideName: "Marco Rossi",
-  },
-  {
-    id: "t4",
-    title: "Valle Sagrado y Mercado de Pisac",
-    location: "Cusco, Perú",
-    price: 79,
-    duration: "1 día",
-    maxGroupSize: 10,
-    rating: 4.6,
-    reviewCount: 67,
-    imageUrl: machuPicchu,
-    guideAvatarUrl: maleGuide,
-    guideName: "Carlos Mendoza",
-  },
-  {
-    id: "t5",
-    title: "Cenotes Secretos de la Riviera Maya",
-    location: "Playa del Carmen, México",
-    price: 120,
-    duration: "5 horas",
-    maxGroupSize: 6,
-    rating: 4.9,
-    reviewCount: 95,
-    imageUrl: beach,
-    guideAvatarUrl: femaleGuide,
-    guideName: "María González",
-  },
-  {
-    id: "t6",
-    title: "Vaticano Sin Colas - Tour Exclusivo",
-    location: "Roma, Italia",
-    price: 199,
-    duration: "4 horas",
-    maxGroupSize: 12,
-    rating: 4.8,
-    reviewCount: 156,
-    imageUrl: rome,
-    guideAvatarUrl: maleGuide,
-    guideName: "Marco Rossi",
-  },
-];
+import defaultTourImage from "@assets/generated_images/machu_picchu_dramatic_sunrise.png";
+import defaultGuideImage from "@assets/generated_images/latino_male_tour_guide_portrait.png";
 
 const categories = [
   { id: "adventure", label: "Aventura" },
@@ -168,6 +84,30 @@ function FilterPanel() {
 export default function ToursPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
+  const { data: tours, isLoading } = useQuery({
+    queryKey: ["/api/tours"],
+    queryFn: () => toursApi.getAll(),
+  });
+
+  const displayTours = tours?.map((tour: any) => ({
+    id: tour.id,
+    title: tour.title,
+    location: tour.location,
+    price: tour.price,
+    duration: tour.duration,
+    maxGroupSize: tour.maxGroupSize || 10,
+    rating: tour.rating || 4.8,
+    reviewCount: tour.reviewCount || 0,
+    imageUrl: tour.imageUrl || defaultTourImage,
+    guideAvatarUrl: tour.guide?.avatarUrl || defaultGuideImage,
+    guideName: tour.guide?.name || "Guía Experto",
+  })) || [];
+
+  const filteredTours = displayTours.filter((tour: any) =>
+    tour.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    tour.location.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <div className="flex min-h-screen flex-col">
       <Header />
@@ -220,16 +160,35 @@ export default function ToursPage() {
             </aside>
 
             <div className="flex-1">
-              <div className="mb-4 flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  Mostrando {allTours.length} tours
-                </p>
-              </div>
-              <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-                {allTours.map((tour) => (
-                  <TourCard key={tour.id} {...tour} />
-                ))}
-              </div>
+              {isLoading ? (
+                <div className="flex h-64 items-center justify-center">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              ) : filteredTours.length > 0 ? (
+                <>
+                  <div className="mb-4 flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      Mostrando {filteredTours.length} tours
+                    </p>
+                  </div>
+                  <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+                    {filteredTours.map((tour: any) => (
+                      <TourCard key={tour.id} {...tour} />
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center p-8 text-center">
+                    <Search className="mb-4 h-12 w-12 text-muted-foreground" />
+                    <p className="text-muted-foreground">
+                      {searchQuery 
+                        ? "No se encontraron tours con esos criterios" 
+                        : "No hay tours disponibles aún"}
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </div>
         </div>

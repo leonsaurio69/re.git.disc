@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { Link } from "wouter";
+import { useState, useEffect } from "react";
+import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { 
   LayoutDashboard, Users, Map, Calendar, DollarSign, 
-  Settings, LogOut, Shield, MapPin, TrendingUp 
+  Settings, LogOut, Shield, MapPin, Loader2, AlertCircle 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -24,35 +25,91 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-
-// todo: remove mock functionality
-const mockUsers: UserData[] = [
-  { id: "u1", name: "Carlos Mendoza", email: "carlos@example.com", role: "guide", status: "active", createdAt: "2023-06-15" },
-  { id: "u2", name: "Ana García", email: "ana@example.com", role: "client", status: "active", createdAt: "2023-08-20" },
-  { id: "u3", name: "Pedro López", email: "pedro@example.com", role: "guide", status: "pending", createdAt: "2024-01-05" },
-  { id: "u4", name: "María Sánchez", email: "maria@example.com", role: "client", status: "active", createdAt: "2023-11-10" },
-];
-
-// todo: remove mock functionality
-const mockBookings: Booking[] = [
-  { id: "b1", tourTitle: "Machu Picchu Adventure", tourLocation: "Cusco, Perú", clientName: "Ana García", date: "2024-01-15", guests: 2, totalPrice: 598, status: "confirmed" },
-  { id: "b2", tourTitle: "Beach Paradise Tour", tourLocation: "Cancún, México", clientName: "Pedro López", date: "2024-01-18", guests: 4, totalPrice: 396, status: "pending" },
-  { id: "b3", tourTitle: "Rome Historical Walk", tourLocation: "Roma, Italia", clientName: "María Sánchez", date: "2024-01-10", guests: 3, totalPrice: 447, status: "completed" },
-];
+import { useAuth } from "@/lib/auth-context";
+import { adminApi, toursApi } from "@/lib/api";
 
 const menuItems = [
-  { title: "Dashboard", icon: LayoutDashboard },
-  { title: "Usuarios", icon: Users },
-  { title: "Tours", icon: Map },
-  { title: "Reservas", icon: Calendar },
-  { title: "Finanzas", icon: DollarSign },
-  { title: "Configuración", icon: Settings },
+  { title: "Dashboard", icon: LayoutDashboard, tab: "overview" as const },
+  { title: "Usuarios", icon: Users, tab: "users" as const },
+  { title: "Tours", icon: Map, tab: "tours" as const },
+  { title: "Reservas", icon: Calendar, tab: "bookings" as const },
+  { title: "Finanzas", icon: DollarSign, tab: "finances" as const },
+  { title: "Configuración", icon: Settings, tab: "settings" as const },
 ];
 
-type TabType = "overview" | "users" | "bookings";
+type TabType = "overview" | "users" | "tours" | "bookings" | "finances" | "settings";
 
 export default function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState<TabType>("overview");
+  const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!authLoading && (!isAuthenticated || user?.role !== "admin")) {
+      setLocation("/login");
+    }
+  }, [authLoading, isAuthenticated, user, setLocation]);
+
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ["/api/admin/stats"],
+    queryFn: () => adminApi.getStats(),
+    enabled: isAuthenticated && user?.role === "admin",
+  });
+
+  const { data: users, isLoading: usersLoading } = useQuery({
+    queryKey: ["/api/admin/users"],
+    queryFn: () => adminApi.getUsers(),
+    enabled: isAuthenticated && user?.role === "admin",
+  });
+
+  const { data: allBookings, isLoading: bookingsLoading } = useQuery({
+    queryKey: ["/api/admin/bookings"],
+    queryFn: () => adminApi.getAllBookings(),
+    enabled: isAuthenticated && user?.role === "admin",
+  });
+
+  const { data: tours } = useQuery({
+    queryKey: ["/api/tours"],
+    queryFn: () => toursApi.getAll(),
+    enabled: isAuthenticated && user?.role === "admin",
+  });
+
+  const handleLogout = () => {
+    logout();
+    setLocation("/");
+  };
+
+  if (authLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || user?.role !== "admin") {
+    return null;
+  }
+
+  const displayUsers: UserData[] = users?.map((u: any) => ({
+    id: u.id.toString(),
+    name: u.name,
+    email: u.email,
+    role: u.role,
+    status: "active",
+    createdAt: u.createdAt || new Date().toISOString(),
+  })) || [];
+
+  const displayBookings: Booking[] = allBookings?.map((booking: any) => ({
+    id: booking.id.toString(),
+    tourTitle: booking.tour?.title || "Tour",
+    tourLocation: booking.tour?.location || "Ubicación",
+    clientName: booking.user?.name || "Cliente",
+    date: booking.date,
+    guests: booking.guests,
+    totalPrice: booking.totalPrice,
+    status: booking.status,
+  })) || [];
 
   const sidebarStyle = {
     "--sidebar-width": "16rem",
@@ -81,11 +138,7 @@ export default function AdminDashboardPage() {
                   {menuItems.map((item) => (
                     <SidebarMenuItem key={item.title}>
                       <SidebarMenuButton
-                        onClick={() => {
-                          if (item.title === "Dashboard") setActiveTab("overview");
-                          else if (item.title === "Usuarios") setActiveTab("users");
-                          else if (item.title === "Reservas") setActiveTab("bookings");
-                        }}
+                        onClick={() => setActiveTab(item.tab)}
                         data-testid={`sidebar-admin-${item.title.toLowerCase()}`}
                       >
                         <item.icon className="h-4 w-4" />
@@ -100,7 +153,7 @@ export default function AdminDashboardPage() {
           <div className="mt-auto border-t p-4">
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton data-testid="sidebar-admin-logout">
+                <SidebarMenuButton onClick={handleLogout} data-testid="sidebar-admin-logout">
                   <LogOut className="h-4 w-4" />
                   <span>Cerrar Sesión</span>
                 </SidebarMenuButton>
@@ -113,6 +166,7 @@ export default function AdminDashboardPage() {
           <header className="flex h-14 items-center justify-between gap-4 border-b px-4">
             <SidebarTrigger data-testid="button-admin-sidebar-toggle" />
             <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Admin: {user?.name}</span>
               <ThemeToggle />
             </div>
           </header>
@@ -124,96 +178,75 @@ export default function AdminDashboardPage() {
 
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                   <StatsCard
-                    title="Ingresos Totales"
-                    value="$45,230"
-                    subtitle="Este mes"
-                    icon={DollarSign}
+                    title="Total Usuarios"
+                    value={stats?.totalUsers || displayUsers.length}
+                    icon={Users}
+                    subtitle="Usuarios registrados"
                     trend={{ value: 15, isPositive: true }}
                   />
                   <StatsCard
-                    title="Usuarios Activos"
-                    value="1,234"
-                    icon={Users}
+                    title="Tours Activos"
+                    value={stats?.totalTours || tours?.length || 0}
+                    icon={Map}
+                    subtitle="Tours publicados"
                     trend={{ value: 8, isPositive: true }}
                   />
                   <StatsCard
-                    title="Tours Publicados"
-                    value="89"
-                    icon={Map}
-                    trend={{ value: 12, isPositive: true }}
+                    title="Reservas Totales"
+                    value={stats?.totalBookings || displayBookings.length}
+                    icon={Calendar}
+                    subtitle="Reservas realizadas"
+                    trend={{ value: 23, isPositive: true }}
                   />
                   <StatsCard
-                    title="Reservas"
-                    value="456"
-                    subtitle="Este mes"
-                    icon={Calendar}
-                    trend={{ value: 5, isPositive: true }}
+                    title="Ingresos Totales"
+                    value={`$${stats?.totalRevenue || displayBookings.reduce((acc, b) => acc + b.totalPrice, 0)}`}
+                    icon={DollarSign}
+                    subtitle="Ganancias totales"
+                    trend={{ value: 18, isPositive: true }}
                   />
                 </div>
 
                 <div className="grid gap-6 lg:grid-cols-2">
                   <Card>
                     <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <TrendingUp className="h-5 w-5" />
-                        Actividad Reciente
-                      </CardTitle>
+                      <CardTitle>Usuarios Recientes</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-4">
-                        {[
-                          { action: "Nuevo guía registrado", user: "Pedro López", time: "hace 5 min" },
-                          { action: "Reserva confirmada", user: "Ana García", time: "hace 15 min" },
-                          { action: "Tour creado", user: "Carlos Mendoza", time: "hace 1 hora" },
-                          { action: "Pago procesado", user: "María Sánchez", time: "hace 2 horas" },
-                        ].map((activity, i) => (
-                          <div key={i} className="flex items-center justify-between border-b pb-2 last:border-0">
-                            <div>
-                              <p className="font-medium">{activity.action}</p>
-                              <p className="text-sm text-muted-foreground">{activity.user}</p>
-                            </div>
-                            <span className="text-xs text-muted-foreground">{activity.time}</span>
-                          </div>
-                        ))}
-                      </div>
+                      {usersLoading ? (
+                        <div className="flex h-32 items-center justify-center">
+                          <Loader2 className="h-6 w-6 animate-spin" />
+                        </div>
+                      ) : displayUsers.length > 0 ? (
+                        <UsersTable users={displayUsers.slice(0, 5)} onAction={(id, action) => console.log(action, id)} />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center p-4 text-center">
+                          <AlertCircle className="mb-2 h-8 w-8 text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground">No hay usuarios registrados</p>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
 
                   <Card>
                     <CardHeader>
-                      <CardTitle>Estadísticas de Roles</CardTitle>
+                      <CardTitle>Reservas Recientes</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className="h-3 w-3 rounded-full bg-primary" />
-                            <span>Clientes</span>
-                          </div>
-                          <span className="font-medium">1,089</span>
+                      {bookingsLoading ? (
+                        <div className="flex h-32 items-center justify-center">
+                          <Loader2 className="h-6 w-6 animate-spin" />
                         </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className="h-3 w-3 rounded-full bg-green-500" />
-                            <span>Guías</span>
-                          </div>
-                          <span className="font-medium">142</span>
+                      ) : displayBookings.length > 0 ? (
+                        <BookingsTable bookings={displayBookings.slice(0, 5)} userRole="admin" />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center p-4 text-center">
+                          <AlertCircle className="mb-2 h-8 w-8 text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground">No hay reservas aún</p>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className="h-3 w-3 rounded-full bg-orange-500" />
-                            <span>Administradores</span>
-                          </div>
-                          <span className="font-medium">3</span>
-                        </div>
-                      </div>
+                      )}
                     </CardContent>
                   </Card>
-                </div>
-
-                <div>
-                  <h2 className="mb-4 text-xl font-semibold">Usuarios Recientes</h2>
-                  <UsersTable users={mockUsers.slice(0, 4)} />
                 </div>
               </div>
             )}
@@ -221,14 +254,52 @@ export default function AdminDashboardPage() {
             {activeTab === "users" && (
               <div className="space-y-6">
                 <h1 className="text-2xl font-bold">Gestión de Usuarios</h1>
-                <UsersTable users={mockUsers} />
+                {usersLoading ? (
+                  <div className="flex h-64 items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : displayUsers.length > 0 ? (
+                  <UsersTable users={displayUsers} onAction={(id, action) => console.log(action, id)} />
+                ) : (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center p-8 text-center">
+                      <Users className="mb-4 h-12 w-12 text-muted-foreground" />
+                      <p className="text-muted-foreground">No hay usuarios registrados</p>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             )}
 
             {activeTab === "bookings" && (
               <div className="space-y-6">
                 <h1 className="text-2xl font-bold">Todas las Reservas</h1>
-                <BookingsTable bookings={mockBookings} userRole="admin" />
+                {bookingsLoading ? (
+                  <div className="flex h-64 items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : displayBookings.length > 0 ? (
+                  <BookingsTable bookings={displayBookings} userRole="admin" />
+                ) : (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center p-8 text-center">
+                      <Calendar className="mb-4 h-12 w-12 text-muted-foreground" />
+                      <p className="text-muted-foreground">No hay reservas aún</p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+
+            {(activeTab === "tours" || activeTab === "finances" || activeTab === "settings") && (
+              <div className="flex h-64 items-center justify-center">
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <p className="text-muted-foreground">
+                      Esta sección estará disponible pronto
+                    </p>
+                  </CardContent>
+                </Card>
               </div>
             )}
           </main>
