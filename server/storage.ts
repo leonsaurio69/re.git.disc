@@ -15,7 +15,7 @@ import {
   UserRole, BookingStatus, GuideStatus, PaymentStatus
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, sql, inArray, gte, lte, like, or } from "drizzle-orm";
+import { eq, desc, and, sql, inArray, gte, lte, like, or, not } from "drizzle-orm";
 
 const DEFAULT_COMMISSION_RATE = 10; // 10% default commission
 
@@ -365,6 +365,60 @@ export class DatabaseStorage implements IStorage {
   async deleteTourAvailability(id: number): Promise<boolean> {
     const result = await db.delete(tourAvailability).where(eq(tourAvailability.id, id)).returning();
     return result.length > 0;
+  }
+
+  async getAvailabilityById(id: number): Promise<TourAvailability | undefined> {
+    const [avail] = await db.select().from(tourAvailability).where(eq(tourAvailability.id, id));
+    return avail;
+  }
+
+  async updateAvailabilitySpots(id: number, bookedSpots: number): Promise<TourAvailability | undefined> {
+    const [updated] = await db.update(tourAvailability)
+      .set({ bookedSpots })
+      .where(eq(tourAvailability.id, id))
+      .returning();
+    return updated;
+  }
+
+  async incrementBookedSpots(availabilityId: number, guests: number): Promise<boolean> {
+    const avail = await this.getAvailabilityById(availabilityId);
+    if (!avail) return false;
+    const newBookedSpots = (avail.bookedSpots || 0) + guests;
+    await this.updateAvailabilitySpots(availabilityId, newBookedSpots);
+    return true;
+  }
+
+  async decrementBookedSpots(availabilityId: number, guests: number): Promise<boolean> {
+    const avail = await this.getAvailabilityById(availabilityId);
+    if (!avail) return false;
+    const newBookedSpots = Math.max(0, (avail.bookedSpots || 0) - guests);
+    await this.updateAvailabilitySpots(availabilityId, newBookedSpots);
+    return true;
+  }
+
+  async checkDuplicateBooking(userId: number, tourId: number, date: Date): Promise<boolean> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    const existing = await db.select().from(bookings)
+      .where(
+        and(
+          eq(bookings.userId, userId),
+          eq(bookings.tourId, tourId),
+          gte(bookings.date, startOfDay),
+          lte(bookings.date, endOfDay),
+          not(eq(bookings.status, BookingStatus.CANCELLED))
+        )
+      );
+    return existing.length > 0;
+  }
+
+  async getAvailableSpots(availabilityId: number): Promise<number> {
+    const avail = await this.getAvailabilityById(availabilityId);
+    if (!avail) return 0;
+    return avail.availableSpots - (avail.bookedSpots || 0);
   }
 
   // Bookings

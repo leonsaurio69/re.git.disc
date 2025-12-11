@@ -1,0 +1,181 @@
+Quiero que implementes el sistema completo de reservas para la aplicación Tourexplora. Debes construir todas las funciones necesarias para USUARIO, GUÍA y ADMIN, manteniendo la arquitectura, roles, autenticación y estructura existente. Aquí están los requisitos exactos:
+
+
+---
+
+1. Creación de reservas (lado del usuario)
+
+En la vista pública de un tour, implementar:
+
+Selección de fecha disponible
+
+Selección de número de personas
+
+Cálculo automático del precio total
+
+Botón “Reservar”
+
+Creación de reserva en Supabase
+
+Validaciones:
+
+Cupos disponibles
+
+No permitir reservas pasadas
+
+No permitir más personas que cupos
+
+
+Confirmación visual
+
+Listado en “Mis Reservas”
+
+
+
+---
+
+2. Base de datos (Supabase)
+
+Crear tabla reservations con columnas:
+
+id
+
+user_id
+
+tour_id
+
+guide_id
+
+date
+
+people
+
+price_total
+
+status (pending, accepted, rejected, cancelled, completed)
+
+created_at
+
+
+Agregar policies para permitir:
+
+Usuario: crear y ver sus propias reservas
+
+Guía: ver reservas de sus tours
+
+Admin: ver todo
+
+
+
+---
+
+3. Dashboard del guía — Gestión de reservas
+
+Crear sección “Reservas de mis Tours”:
+
+Listado de reservas con fecha, usuario, personas, estado
+
+Ver detalle
+
+Botones: Aceptar y Rechazar
+
+Notificación al usuario
+
+Restar cupos automáticamente cuando se acepta
+
+Restaurar cupos al rechazar o cancelar
+
+
+
+---
+
+4. Dashboard del usuario — Mis reservas
+
+Crear página:
+
+Listado de reservas con estado
+
+Detalle
+
+Botón para cancelar cuando sea posible
+
+Ver información del tour asociado
+
+
+
+---
+
+5. Dashboard del admin — Supervisión global
+
+Crear sección “Reservas del sistema”:
+
+Lista completa de todas las reservas
+
+Filtros: tour, guía, estado, fecha
+
+Posibilidad de cambiar estado manualmente
+
+Vista de detalle
+
+
+
+---
+
+6. Lógica crítica del sistema
+
+Implementar:
+
+Evitar reservas duplicadas del mismo usuario para el mismo tour/día
+
+Restar cupos al aceptar una reserva
+
+Devolver cupos al rechazar o cancelar
+
+No permitir cambios de estado inválidos
+
+Invalidar cache en cascada (tours, availability, reservations)
+
+
+
+---
+
+7. Testing automático (obligatorio)
+
+Implementar tests e2e:
+
+Usuario crea reserva
+
+Guía la acepta
+
+Usuario la ve como aceptada
+
+Cupos disminuyen
+
+Guía rechaza reserva → cupos restaurados
+
+Admin puede ver todo
+
+
+
+---
+
+8. UI/UX requerido
+
+Agregar:
+
+Modales de confirmación
+
+Indicadores claros de estado (colores)
+
+Toasters de éxito / error
+
+Loading states
+
+Empty states para cada rol
+
+
+
+---
+
+Mantén el estilo, componentes, rutas y patrones ya creados en el proyecto.
+Optimiza performance, usa invalidación de queries y maneja correctamente errores y autenticación basada en roles.

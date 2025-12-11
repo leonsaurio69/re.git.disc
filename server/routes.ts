@@ -539,14 +539,39 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
   app.post("/api/bookings", authenticate, async (req: AuthRequest, res) => {
     try {
       const { tourId, date, guests, availabilityId, notes } = req.body;
+      const parsedTourId = parseInt(tourId);
+      const bookingDate = new Date(date);
       
-      const tour = await storage.getTourById(parseInt(tourId));
+      const tour = await storage.getTourById(parsedTourId);
       if (!tour) {
         return res.status(404).json({ message: "Tour no encontrado" });
       }
 
       if (!tour.active) {
         return res.status(400).json({ message: "Este tour no está disponible" });
+      }
+
+      // Validate date is not in the past
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (bookingDate < today) {
+        return res.status(400).json({ message: "No puedes reservar en fechas pasadas" });
+      }
+
+      // Check for duplicate booking
+      const isDuplicate = await storage.checkDuplicateBooking(req.user!.userId, parsedTourId, bookingDate);
+      if (isDuplicate) {
+        return res.status(400).json({ message: "Ya tienes una reserva para este tour en esta fecha" });
+      }
+
+      // Validate availability if provided
+      let parsedAvailabilityId: number | null = null;
+      if (availabilityId) {
+        parsedAvailabilityId = parseInt(availabilityId);
+        const availableSpots = await storage.getAvailableSpots(parsedAvailabilityId);
+        if (guests > availableSpots) {
+          return res.status(400).json({ message: `Solo quedan ${availableSpots} cupos disponibles` });
+        }
       }
 
       if (guests > tour.maxGroupSize) {
@@ -557,9 +582,9 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
 
       const bookingData = insertBookingSchema.parse({
         userId: req.user!.userId,
-        tourId: parseInt(tourId),
-        availabilityId: availabilityId ? parseInt(availabilityId) : null,
-        date: new Date(date),
+        tourId: parsedTourId,
+        availabilityId: parsedAvailabilityId,
+        date: bookingDate,
         guests,
         subtotal,
         totalPrice: subtotal,
@@ -649,10 +674,41 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
         return res.status(404).json({ message: "Reserva no encontrada" });
       }
 
+      // Validate status transitions
+      const validTransitions: Record<string, string[]> = {
+        [BookingStatus.PENDING]: [BookingStatus.CONFIRMED, BookingStatus.CANCELLED],
+        [BookingStatus.CONFIRMED]: [BookingStatus.COMPLETED, BookingStatus.CANCELLED],
+        [BookingStatus.COMPLETED]: [],
+        [BookingStatus.CANCELLED]: [],
+      };
+
+      if (!validTransitions[booking.status]?.includes(status)) {
+        return res.status(400).json({ message: `No se puede cambiar de ${booking.status} a ${status}` });
+      }
+
       if (req.user!.role === UserRole.GUIDE) {
         const tour = await storage.getTourById(booking.tourId);
         if (!tour || tour.guideId !== req.user!.userId) {
           return res.status(403).json({ message: "No tienes permiso" });
+        }
+      }
+
+      // Handle spot management based on status change
+      if (booking.availabilityId) {
+        const previousStatus = booking.status;
+        
+        // When confirming: increment booked spots
+        if (status === BookingStatus.CONFIRMED && previousStatus === BookingStatus.PENDING) {
+          const availableSpots = await storage.getAvailableSpots(booking.availabilityId);
+          if (booking.guests > availableSpots) {
+            return res.status(400).json({ message: `Solo quedan ${availableSpots} cupos disponibles` });
+          }
+          await storage.incrementBookedSpots(booking.availabilityId, booking.guests);
+        }
+        
+        // When cancelling a confirmed booking: decrement booked spots
+        if (status === BookingStatus.CANCELLED && previousStatus === BookingStatus.CONFIRMED) {
+          await storage.decrementBookedSpots(booking.availabilityId, booking.guests);
         }
       }
 
@@ -678,6 +734,16 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
 
       if (req.user!.role !== UserRole.ADMIN && booking.userId !== req.user!.userId) {
         return res.status(403).json({ message: "No tienes permiso" });
+      }
+
+      // Only pending bookings can be cancelled by users
+      if (req.user!.role !== UserRole.ADMIN && booking.status !== BookingStatus.PENDING) {
+        return res.status(400).json({ message: "Solo puedes cancelar reservas pendientes" });
+      }
+
+      // If booking was confirmed, restore spots
+      if (booking.status === BookingStatus.CONFIRMED && booking.availabilityId) {
+        await storage.decrementBookedSpots(booking.availabilityId, booking.guests);
       }
 
       await storage.updateBookingStatus(id, BookingStatus.CANCELLED, req.user!.userId, reason);

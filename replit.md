@@ -180,3 +180,11 @@ The database includes sample data:
   - Actions: Edit tour (modal), Delete tour (confirmation), Toggle active/inactive, Manage availability
   - Improved cache invalidation across related queries (tours, featured, bookings)
   - Complete test coverage with data-testid attributes
+- **Enhanced Booking System (Dec 11)**:
+  - Backend validations: duplicate booking prevention, past date restriction, availability spots check
+  - Status transition matrix: pending→confirmed/cancelled, confirmed→completed/cancelled
+  - Automatic spot management: increment bookedSpots on confirm, decrement on cancel
+  - BookingCard now loads real availability dates from API with spots display
+  - User dashboard with cancel booking modal (pending only) and view details modal
+  - TourCard navigation to tour details page for booking flow
+  - Stats cards showing pending/confirmed/completed booking counts

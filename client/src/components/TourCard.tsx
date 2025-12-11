@@ -1,3 +1,4 @@
+import { useLocation } from "wouter";
 import { Clock, MapPin, Users, Star } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -5,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export interface TourCardProps {
-  id: string;
+  id: string | number;
   title: string;
   location: string;
   price: number;
@@ -17,7 +18,6 @@ export interface TourCardProps {
   guideAvatarUrl?: string;
   guideName: string;
   featured?: boolean;
-  onBook?: (id: string) => void;
 }
 
 export function TourCard({
@@ -33,18 +33,24 @@ export function TourCard({
   guideAvatarUrl,
   guideName,
   featured = false,
-  onBook,
 }: TourCardProps) {
-  const handleBook = () => {
-    if (onBook) {
-      onBook(id);
-    } else {
-      console.log("Booking tour:", id);
-    }
+  const [, setLocation] = useLocation();
+
+  const handleViewDetails = () => {
+    setLocation(`/tour/${id}`);
+  };
+
+  const handleBook = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setLocation(`/tour/${id}`);
   };
 
   return (
-    <Card className="group overflow-visible transition-transform duration-200 hover:scale-[1.02]">
+    <Card 
+      className="group cursor-pointer overflow-visible transition-transform duration-200 hover:scale-[1.02]"
+      onClick={handleViewDetails}
+      data-testid={`card-tour-${id}`}
+    >
       <div className="relative aspect-video overflow-hidden rounded-t-md">
         <img
           src={imageUrl}
