@@ -24,12 +24,15 @@ export function LoginForm() {
     setIsLoading(true);
 
     try {
-      await login(email, password);
+      const user = await login(email, password);
       toast({
         title: "Bienvenido",
         description: "Has iniciado sesión correctamente",
       });
-      setLocation("/dashboard");
+      const redirectPath = user.role === "admin" ? "/admin/dashboard" : 
+                          user.role === "guide" ? "/guide/dashboard" : "/dashboard";
+      // Use setTimeout to defer navigation until after React state updates
+      setTimeout(() => setLocation(redirectPath), 0);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -145,12 +148,15 @@ export function RegisterForm() {
     setIsLoading(true);
 
     try {
-      await register(name, email, password, role);
+      const user = await register(name, email, password, role);
       toast({
         title: "Cuenta creada",
         description: "Tu cuenta ha sido creada exitosamente",
       });
-      setLocation("/dashboard");
+      const redirectPath = user.role === "admin" ? "/admin/dashboard" : 
+                          user.role === "guide" ? "/guide/dashboard" : "/dashboard";
+      // Use setTimeout to defer navigation until after React state updates
+      setTimeout(() => setLocation(redirectPath), 0);
     } catch (error: any) {
       toast({
         title: "Error",

@@ -7,8 +7,8 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string, role: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<SafeUser>;
+  register: (name: string, email: string, password: string, role: string) => Promise<SafeUser>;
   logout: () => void;
 }
 
@@ -61,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loadUser();
   }, [token]);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string): Promise<SafeUser> => {
     const response = await apiRequest("POST", "/api/auth/login", { email, password });
     const data = await response.json();
     
@@ -73,9 +73,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(data.token);
     setUser(data.user);
     queryClient.clear();
+    return data.user;
   };
 
-  const register = async (name: string, email: string, password: string, role: string) => {
+  const register = async (name: string, email: string, password: string, role: string): Promise<SafeUser> => {
     const response = await apiRequest("POST", "/api/auth/register", { 
       name, email, password, role 
     });
@@ -89,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(data.token);
     setUser(data.user);
     queryClient.clear();
+    return data.user;
   };
 
   const logout = () => {

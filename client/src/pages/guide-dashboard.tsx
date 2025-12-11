@@ -79,9 +79,17 @@ export default function GuideDashboardPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
+  // Redirect if not authenticated or wrong role - but only after auth is fully loaded
   useEffect(() => {
-    if (!authLoading && (!isAuthenticated || user?.role !== "guide")) {
+    if (!authLoading && !isAuthenticated) {
       setLocation("/login");
+    } else if (!authLoading && isAuthenticated && user?.role !== "guide") {
+      // User has wrong role, redirect to correct dashboard
+      if (user?.role === "user") {
+        setLocation("/dashboard");
+      } else if (user?.role === "admin") {
+        setLocation("/admin/dashboard");
+      }
     }
   }, [authLoading, isAuthenticated, user, setLocation]);
 

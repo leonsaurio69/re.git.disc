@@ -43,12 +43,19 @@ export default function UserDashboardPage() {
   const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const [, setLocation] = useLocation();
 
-  // Redirect if not authenticated
+  // Redirect if not authenticated or wrong role - but only after auth is fully loaded
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
       setLocation("/login");
+    } else if (!authLoading && isAuthenticated && user?.role !== "user") {
+      // User has wrong role, redirect to correct dashboard
+      if (user?.role === "guide") {
+        setLocation("/guide/dashboard");
+      } else if (user?.role === "admin") {
+        setLocation("/admin/dashboard");
+      }
     }
-  }, [authLoading, isAuthenticated, setLocation]);
+  }, [authLoading, isAuthenticated, user, setLocation]);
 
   const { data: bookings, isLoading } = useQuery({
     queryKey: ["/api/bookings"],

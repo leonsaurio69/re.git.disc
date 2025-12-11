@@ -42,7 +42,7 @@ export function BookingCard({ tourId, tourTitle, pricePerPerson, maxGroupSize }:
 
     setIsLoading(true);
     try {
-      await bookingsApi.create(tourId, date, guests);
+      await bookingsApi.create({ tourId, date, guests });
       toast({
         title: "Reserva exitosa",
         description: `Has reservado "${tourTitle}" para ${guests} persona(s)`,
