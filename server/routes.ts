@@ -533,6 +533,128 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
     }
   });
 
+  // ==================== STRIPE CHECKOUT ROUTES ====================
+
+  // Create Stripe Checkout Session
+  app.post("/api/checkout/create-session", authenticate, async (req: AuthRequest, res) => {
+    try {
+      const { tourId, date, guests, availabilityId } = req.body;
+      const parsedTourId = parseInt(tourId);
+      const bookingDate = new Date(date);
+      
+      const tour = await storage.getTourById(parsedTourId);
+      if (!tour) {
+        return res.status(404).json({ message: "Tour no encontrado" });
+      }
+
+      if (!tour.active) {
+        return res.status(400).json({ message: "Este tour no está disponible" });
+      }
+
+      // Validate date is not in the past
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (bookingDate < today) {
+        return res.status(400).json({ message: "No puedes reservar en fechas pasadas" });
+      }
+
+      // Check for duplicate booking
+      const isDuplicate = await storage.checkDuplicateBooking(req.user!.userId, parsedTourId, bookingDate);
+      if (isDuplicate) {
+        return res.status(400).json({ message: "Ya tienes una reserva para este tour en esta fecha" });
+      }
+
+      // Validate availability if provided
+      let parsedAvailabilityId: number | null = null;
+      if (availabilityId) {
+        parsedAvailabilityId = parseInt(availabilityId);
+        const availableSpots = await storage.getAvailableSpots(parsedAvailabilityId);
+        if (guests > availableSpots) {
+          return res.status(400).json({ message: `Solo quedan ${availableSpots} cupos disponibles` });
+        }
+      }
+
+      if (guests > tour.maxGroupSize) {
+        return res.status(400).json({ message: `Máximo ${tour.maxGroupSize} personas por grupo` });
+      }
+
+      // Calculate prices with 15% commission
+      const subtotal = tour.price * guests;
+      const commissionRate = 15;
+      const commissionAmount = Math.round(subtotal * (commissionRate / 100));
+      const totalPrice = subtotal + commissionAmount;
+      const guideEarnings = subtotal - commissionAmount;
+
+      // Create booking with PENDING status
+      const bookingData = insertBookingSchema.parse({
+        userId: req.user!.userId,
+        tourId: parsedTourId,
+        availabilityId: parsedAvailabilityId,
+        date: bookingDate,
+        guests,
+        subtotal,
+        totalPrice,
+        commissionAmount,
+        commissionRate,
+        guideEarnings,
+        status: BookingStatus.PENDING,
+        paymentStatus: 'pending',
+      });
+
+      const booking = await storage.createBooking(bookingData);
+
+      // Create Stripe Checkout Session
+      try {
+        const { getUncachableStripeClient } = await import('./stripeClient');
+        const stripe = await getUncachableStripeClient();
+
+        const baseUrl = process.env.REPLIT_DEV_DOMAIN 
+          ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+          : process.env.REPLIT_DEPLOYMENT === '1'
+            ? `https://${process.env.REPLIT_DOMAINS?.split(',')[0]}`
+            : 'http://localhost:5000';
+
+        const session = await stripe.checkout.sessions.create({
+          payment_method_types: ['card'],
+          mode: 'payment',
+          line_items: [
+            {
+              price_data: {
+                currency: 'usd',
+                product_data: {
+                  name: tour.title,
+                  description: `${guests} viajero${guests > 1 ? 's' : ''} - ${bookingDate.toLocaleDateString('es-ES')}`,
+                },
+                unit_amount: Math.round(totalPrice * 100),
+              },
+              quantity: 1,
+            },
+          ],
+          metadata: {
+            bookingId: booking.id.toString(),
+            tourId: tour.id.toString(),
+            userId: req.user!.userId.toString(),
+          },
+          success_url: `${baseUrl}/checkout/success?booking_id=${booking.id}`,
+          cancel_url: `${baseUrl}/checkout/cancel?booking_id=${booking.id}`,
+        });
+
+        // Update booking with Stripe session ID
+        await storage.updateBookingStripeSession(booking.id, session.id);
+
+        res.json({ url: session.url, bookingId: booking.id });
+      } catch (stripeError: any) {
+        // If Stripe fails, delete the orphaned booking
+        console.error("Stripe error, cleaning up booking:", stripeError);
+        await storage.deleteBooking(booking.id);
+        throw stripeError;
+      }
+    } catch (error: any) {
+      console.error("Create checkout session error:", error);
+      res.status(500).json({ message: error.message || "Error al crear sesión de pago" });
+    }
+  });
+
   // ==================== BOOKING ROUTES ====================
 
   // Create booking

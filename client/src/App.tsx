@@ -14,6 +14,8 @@ import TourDetailsPage from "@/pages/tour-details";
 import GuideDashboardPage from "@/pages/guide-dashboard";
 import AdminDashboardPage from "@/pages/admin-dashboard";
 import UserDashboardPage from "@/pages/user-dashboard";
+import CheckoutSuccessPage from "@/pages/checkout-success";
+import CheckoutCancelPage from "@/pages/checkout-cancel";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -27,6 +29,8 @@ function Router() {
       <Route path="/guide/dashboard" component={GuideDashboardPage} />
       <Route path="/admin/dashboard" component={AdminDashboardPage} />
       <Route path="/dashboard" component={UserDashboardPage} />
+      <Route path="/checkout/success" component={CheckoutSuccessPage} />
+      <Route path="/checkout/cancel" component={CheckoutCancelPage} />
       <Route component={NotFound} />
     </Switch>
   );

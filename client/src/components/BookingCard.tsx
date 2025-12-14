@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Calendar, Users, CreditCard, Check, Loader2, AlertCircle } from "lucide-react";
+import { Users, CreditCard, Check, Loader2, AlertCircle, Lock } from "lucide-react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,8 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/lib/auth-context";
-import { bookingsApi, toursApi } from "@/lib/api";
-import { queryClient } from "@/lib/queryClient";
+import { toursApi } from "@/lib/api";
+import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 interface BookingCardProps {
@@ -56,25 +56,23 @@ export function BookingCard({ tourId, tourTitle, pricePerPerson, maxGroupSize }:
   }, [effectiveMaxGuests, guests]);
 
   const totalPrice = pricePerPerson * guests;
-  const serviceFee = Math.round(totalPrice * 0.1);
+  const serviceFee = Math.round(totalPrice * 0.15);
   const grandTotal = totalPrice + serviceFee;
 
-  const bookingMutation = useMutation({
-    mutationFn: (data: { tourId: number; date: string; guests: number; availabilityId?: number }) =>
-      bookingsApi.create(data),
-    onSuccess: () => {
-      toast({
-        title: "Reserva creada",
-        description: `Tu reserva para "${tourTitle}" ha sido enviada. El guía la confirmará pronto.`,
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tours", tourId, "availability"] });
-      setLocation("/dashboard");
+  const checkoutMutation = useMutation({
+    mutationFn: async (data: { tourId: number; date: string; guests: number; availabilityId?: number }) => {
+      const response = await apiRequest("POST", "/api/checkout/create-session", data);
+      return response.json();
+    },
+    onSuccess: (data: { url: string }) => {
+      if (data.url) {
+        window.location.href = data.url;
+      }
     },
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message || "No se pudo completar la reserva",
+        description: error.message || "No se pudo iniciar el proceso de pago",
         variant: "destructive",
       });
     },
@@ -109,7 +107,7 @@ export function BookingCard({ tourId, tourTitle, pricePerPerson, maxGroupSize }:
       return;
     }
 
-    bookingMutation.mutate({
+    checkoutMutation.mutate({
       tourId,
       date: selectedAvailability.date,
       guests,
@@ -219,7 +217,7 @@ export function BookingCard({ tourId, tourTitle, pricePerPerson, maxGroupSize }:
             <span>${totalPrice}</span>
           </div>
           <div className="flex justify-between gap-2 text-sm">
-            <span>Tarifa de servicio (10%)</span>
+            <span>Tarifa de servicio (15%)</span>
             <span>${serviceFee}</span>
           </div>
         </div>
@@ -236,18 +234,18 @@ export function BookingCard({ tourId, tourTitle, pricePerPerson, maxGroupSize }:
           className="w-full"
           size="lg"
           onClick={handleBook}
-          disabled={!selectedAvailabilityId || bookingMutation.isPending || availableSpots <= 0}
+          disabled={!selectedAvailabilityId || checkoutMutation.isPending || availableSpots <= 0}
           data-testid="button-confirm-booking"
         >
-          {bookingMutation.isPending ? (
+          {checkoutMutation.isPending ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Procesando...
+              Redirigiendo a pago...
             </>
           ) : (
             <>
-              <CreditCard className="mr-2 h-4 w-4" />
-              Reservar Ahora
+              <Lock className="mr-2 h-4 w-4" />
+              Pagar con Stripe
             </>
           )}
         </Button>

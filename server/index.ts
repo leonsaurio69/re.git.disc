@@ -2,6 +2,8 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { getStripeSync } from "./stripeClient";
+import { WebhookHandlers } from "./webhookHandlers";
 
 const app = express();
 const httpServer = createServer(app);
@@ -11,6 +13,38 @@ declare module "http" {
     rawBody: unknown;
   }
 }
+
+async function initStripe() {
+  try {
+    const sync = await getStripeSync();
+    const { uuid, webhookPath } = await sync.runMigrations({
+      enabledEvents: [
+        'checkout.session.completed',
+        'payment_intent.payment_failed',
+      ],
+    });
+
+    console.log(`[Stripe] Webhook registered at ${webhookPath}`);
+
+    app.post(webhookPath, express.raw({ type: 'application/json' }), async (req, res) => {
+      try {
+        const signature = req.headers['stripe-signature'] as string;
+        await WebhookHandlers.processWebhook(req.body, signature, uuid);
+        res.status(200).send('OK');
+      } catch (error: any) {
+        console.error('[Stripe Webhook Error]', error.message);
+        res.status(400).send(`Webhook Error: ${error.message}`);
+      }
+    });
+
+    return uuid;
+  } catch (error) {
+    console.error('[Stripe] Failed to initialize:', error);
+    return null;
+  }
+}
+
+initStripe();
 
 app.use(
   express.json({
