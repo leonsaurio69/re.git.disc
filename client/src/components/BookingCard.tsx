@@ -257,7 +257,7 @@ export function BookingCard({ tourId, tourTitle, pricePerPerson, maxGroupSize }:
         </p>
         {!isAuthenticated && (
           <p className="text-xs text-muted-foreground">
-            <Button variant="link" className="h-auto p-0 text-xs" onClick={() => setLocation("/login")}>
+            <Button variant="ghost" className="h-auto p-0 text-xs underline" onClick={() => setLocation("/login")}>
               Inicia sesión
             </Button>
             {" "}para hacer una reserva
