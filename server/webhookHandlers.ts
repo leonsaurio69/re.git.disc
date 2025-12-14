@@ -1,4 +1,4 @@
-import { getStripeSync, getUncachableStripeClient } from './stripeClient';
+import { getStripeSync } from './stripeClient';
 import { storage } from './storage';
 import { BookingStatus } from '@shared/schema';
 
@@ -14,20 +14,12 @@ export class WebhookHandlers {
 
     const sync = await getStripeSync();
     
-    const stripe = await getUncachableStripeClient();
-    const webhooks = await stripe.webhookEndpoints.list({ limit: 100 });
-    const managedWebhook = webhooks.data.find(wh => wh.url?.includes(uuid));
-    
-    if (!managedWebhook) {
-      throw new Error('Managed webhook not found');
-    }
+    // Process webhook through stripe-replit-sync
+    // This handles signature verification and event parsing
+    await sync.processWebhook(payload, signature, uuid);
 
-    const event = stripe.webhooks.constructEvent(
-      payload,
-      signature,
-      managedWebhook.secret!
-    );
-
+    // Parse payload to get event data for custom handling
+    const event = JSON.parse(payload.toString());
     console.log(`[Stripe Webhook] Received event: ${event.type}`);
 
     switch (event.type) {
@@ -40,8 +32,6 @@ export class WebhookHandlers {
       default:
         console.log(`[Stripe Webhook] Unhandled event type: ${event.type}`);
     }
-
-    await sync.processWebhook(payload, signature, uuid);
   }
 
   static async handleCheckoutCompleted(session: any): Promise<void> {

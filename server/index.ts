@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { runMigrations } from "stripe-replit-sync";
 import { getStripeSync } from "./stripeClient";
 import { WebhookHandlers } from "./webhookHandlers";
 
@@ -14,28 +15,41 @@ declare module "http" {
   }
 }
 
+let stripeWebhookUuid: string | null = null;
+
 async function initStripe() {
+  const databaseUrl = process.env.DATABASE_URL;
+
+  if (!databaseUrl) {
+    console.log('[Stripe] DATABASE_URL not found, skipping Stripe initialization');
+    return null;
+  }
+
   try {
-    const sync = await getStripeSync();
-    const { uuid, webhookPath } = await sync.runMigrations({
-      enabledEvents: [
-        'checkout.session.completed',
-        'payment_intent.payment_failed',
-      ],
+    console.log('[Stripe] Initializing schema...');
+    await runMigrations({ 
+      databaseUrl,
+      schema: 'stripe'
     });
+    console.log('[Stripe] Schema ready');
 
-    console.log(`[Stripe] Webhook registered at ${webhookPath}`);
+    const stripeSync = await getStripeSync();
 
-    app.post(webhookPath, express.raw({ type: 'application/json' }), async (req, res) => {
-      try {
-        const signature = req.headers['stripe-signature'] as string;
-        await WebhookHandlers.processWebhook(req.body, signature, uuid);
-        res.status(200).send('OK');
-      } catch (error: any) {
-        console.error('[Stripe Webhook Error]', error.message);
-        res.status(400).send(`Webhook Error: ${error.message}`);
+    console.log('[Stripe] Setting up managed webhook...');
+    const webhookBaseUrl = `https://${process.env.REPLIT_DOMAINS?.split(',')[0]}`;
+    const { webhook, uuid } = await stripeSync.findOrCreateManagedWebhook(
+      `${webhookBaseUrl}/api/stripe/webhook`,
+      {
+        enabled_events: ['checkout.session.completed', 'payment_intent.payment_failed'],
+        description: 'TourExplora checkout webhook',
       }
-    });
+    );
+    stripeWebhookUuid = uuid;
+    console.log(`[Stripe] Webhook configured: ${webhook.url}`);
+
+    stripeSync.syncBackfill()
+      .then(() => console.log('[Stripe] Data synced'))
+      .catch((err: any) => console.error('[Stripe] Sync error:', err));
 
     return uuid;
   } catch (error) {
@@ -45,6 +59,33 @@ async function initStripe() {
 }
 
 initStripe();
+
+app.post(
+  '/api/stripe/webhook/:uuid',
+  express.raw({ type: 'application/json' }),
+  async (req, res) => {
+    const signature = req.headers['stripe-signature'];
+    if (!signature) {
+      return res.status(400).json({ error: 'Missing stripe-signature' });
+    }
+
+    try {
+      const sig = Array.isArray(signature) ? signature[0] : signature;
+      const { uuid } = req.params;
+      
+      if (!Buffer.isBuffer(req.body)) {
+        console.error('[Stripe] Webhook body is not a Buffer');
+        return res.status(500).json({ error: 'Webhook processing error' });
+      }
+
+      await WebhookHandlers.processWebhook(req.body as Buffer, sig, uuid);
+      res.status(200).json({ received: true });
+    } catch (error: any) {
+      console.error('[Stripe Webhook Error]', error.message);
+      res.status(400).json({ error: 'Webhook processing error' });
+    }
+  }
+);
 
 app.use(
   express.json({
