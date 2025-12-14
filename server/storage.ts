@@ -480,6 +480,43 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0;
   }
 
+  async updateBookingStripeSession(id: number, stripeSessionId: string): Promise<Booking | undefined> {
+    const [updated] = await db.update(bookings)
+      .set({ stripeSessionId })
+      .where(eq(bookings.id, id))
+      .returning();
+    return updated;
+  }
+
+  async updateBookingPayment(id: number, data: {
+    stripePaymentIntentId?: string;
+    paymentStatus?: string;
+    status?: string;
+    cancelReason?: string;
+  }): Promise<Booking | undefined> {
+    const updateData: any = { ...data };
+    if (data.status === BookingStatus.CANCELLED) {
+      updateData.cancelledAt = new Date();
+    }
+    const [updated] = await db.update(bookings)
+      .set(updateData)
+      .where(eq(bookings.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getBookingByStripeSession(sessionId: string): Promise<Booking | undefined> {
+    const [booking] = await db.select().from(bookings)
+      .where(eq(bookings.stripeSessionId, sessionId));
+    return booking;
+  }
+
+  async getBookingByPaymentIntent(paymentIntentId: string): Promise<Booking | undefined> {
+    const [booking] = await db.select().from(bookings)
+      .where(eq(bookings.stripePaymentIntentId, paymentIntentId));
+    return booking;
+  }
+
   // Payments
   async createPayment(payment: InsertPayment): Promise<Payment> {
     const [newPayment] = await db.insert(payments).values(payment).returning();
